@@ -40,10 +40,13 @@ allowed_hosts = {
     host.strip().lower().removeprefix("[").removesuffix("]")
     for host in os.environ.get("VEGA_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",")
 }
+vercel_preview = bool(os.environ.get("VERCEL"))
 
 
 @app.middleware("http")
 async def protect_local_mutations(request: Request, call_next):
+    if vercel_preview and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        return JSONResponse({"detail": "This hosted preview is read-only. Run Vega locally to store private records."}, status_code=403)
     # Parse bracketed IPv6 correctly; accept exact configured hosts only.
     hosts = request.headers.getlist("host")
     try:
@@ -53,7 +56,7 @@ async def protect_local_mutations(request: Request, call_next):
                       and (host.port is None or 0 < host.port <= 65535))
     except ValueError:
         valid_host = False
-    if not valid_host:
+    if not valid_host and not vercel_preview:
         return JSONResponse({"detail": "Invalid host header"}, status_code=400)
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         origin = request.headers.get("origin")
@@ -83,7 +86,8 @@ def health_check():
         "system": "VEGA",
         "status": "OPERATIONAL",
         "mode": "SIMULATION",
-        "egress": "SIMULATED COUNTERS ONLY; OS EGRESS NOT VERIFIED"
+        "egress": "SIMULATED COUNTERS ONLY; OS EGRESS NOT VERIFIED",
+        "deployment_mode": "HOSTED_PREVIEW" if vercel_preview else "LOCAL"
     }
 
 # Mount static frontend assets

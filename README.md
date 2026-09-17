@@ -35,3 +35,7 @@ The tests create private temporary storage and explicitly load synthetic fixture
 - `Dockerfile` and `docker-compose.yml` — optional container deployment.
 
 The Docker image installs runtime dependencies only and exposes the app on the host loopback interface through Compose. Docker bridge networking by itself does not block outbound traffic from the container.
+
+## Vercel hosted preview
+
+Vercel detects the FastAPI entrypoint in `pyproject.toml`. On Vercel, Vega uses temporary function storage and disables all mutating API requests. The hosted site is a read-only interface preview: it cannot persist model manifests, documents, scans, or receipts. Run Vega locally for the working private workspace. Do not upload private data to the hosted preview.

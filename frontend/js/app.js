@@ -1,5 +1,6 @@
 const App = {
   page: 'overview',
+  hostedPreview: false,
   receipt: null,
   labels: {overview:'Overview',models:'Model registry',knowledge:'Knowledge base',security:'Security center',receipts:'Receipts',system:'System'},
   escape(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); },
@@ -60,7 +61,7 @@ const App = {
   async loadOverview() {
     try {
       const data = await this.request('/api/dashboard/status');
-      document.getElementById('connection-status').textContent = 'Runtime connected';
+      document.getElementById('connection-status').textContent = this.hostedPreview ? 'Hosted preview' : 'Runtime connected';
       document.getElementById('connection-dot').classList.remove('offline');
       document.getElementById('model-count').textContent = data.registered_models;
       document.getElementById('model-note').textContent = `${data.qualified_models} qualified · ${data.quarantined_models} in quarantine`;
@@ -185,7 +186,26 @@ const App = {
       this.formError(form,message);
     } finally { submit.disabled = false; }
   },
-  init() {
+  async init() {
+    try {
+      const health = await this.request('/health');
+      if (health.deployment_mode === 'HOSTED_PREVIEW') {
+        this.hostedPreview = true;
+        document.getElementById('hosted-preview-notice').hidden = false;
+        document.getElementById('connection-status').textContent = 'Hosted preview';
+        document.querySelector('.brand small').textContent = 'HOSTED PREVIEW';
+        document.querySelector('.sidebar-foot').innerHTML = 'Read-only preview<br><small>Private workspace runs locally</small>';
+        for (const button of document.querySelectorAll('[data-open],#scan-button')) {
+          button.disabled = true;
+          button.title = 'Available in the local workspace';
+        }
+        document.querySelector('#page-overview .page-heading p').textContent = 'Explore the interface. Private data stays in your local workspace.';
+        document.querySelector('#page-overview .hero p').textContent = 'Run Vega locally to register a model manifest, add documents, and inspect context.';
+        document.querySelector('#page-overview .columns .card-head p').textContent = 'Vercel function telemetry';
+        document.querySelector('#page-system .page-heading p').textContent = 'Hosted function capacity and prototype boundaries.';
+        document.querySelector('#page-system .card-head p').textContent = 'Reported by the hosted function';
+      }
+    } catch (_) { /* The regular connection indicator reports API failures. */ }
     document.getElementById('document-form').elements.effective_date.value = new Date().toISOString().slice(0,10);
     document.getElementById('nav-toggle').addEventListener('click',()=>document.body.classList.contains('nav-open') ? this.closeNav() : this.openNav());
     document.getElementById('nav-scrim').addEventListener('click',()=>this.closeNav());

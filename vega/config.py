@@ -6,7 +6,8 @@ import os
 
 # Base Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = Path(os.environ.get("VEGA_DATA_DIR", BASE_DIR / "data")).resolve()
+DEFAULT_DATA_DIR = Path("/tmp/vega") if os.environ.get("VERCEL") else BASE_DIR / "data"
+DATA_DIR = Path(os.environ.get("VEGA_DATA_DIR", DEFAULT_DATA_DIR)).resolve()
 DB_DIR = DATA_DIR / "db"
 KNOWLEDGE_DIR = DATA_DIR / "knowledge"
 WORKSPACES_DIR = DATA_DIR / "workspaces"
