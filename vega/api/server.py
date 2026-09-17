@@ -1,0 +1,98 @@
+"""
+Vega Sovereign AI Runtime - FastAPI Server
+Assembles all sovereign runtime endpoints and mounts the lightweight industrial UI.
+"""
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from urllib.parse import urlsplit
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pathlib import Path
+
+from vega.config import FRONTEND_DIR
+from vega.storage.database import init_db
+
+from vega.api.routes.dashboard import router as dashboard_router
+from vega.api.routes.models import router as models_router
+from vega.api.routes.hardware import router as hardware_router
+from vega.api.routes.knowledge import router as knowledge_router
+from vega.api.routes.security import router as security_router
+from vega.api.routes.tasks import router as tasks_router
+from vega.api.routes.receipts import router as receipts_router
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize empty local storage on server start."""
+    init_db()
+    yield
+
+app = FastAPI(
+    title="Vega Sovereign AI Runtime",
+    description="Self-Defending Sovereign Industrial AI Runtime Environment",
+    version="1.0.0-prototype",
+    lifespan=lifespan
+)
+
+allowed_hosts = {
+    host.strip().lower().removeprefix("[").removesuffix("]")
+    for host in os.environ.get("VEGA_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",")
+}
+
+
+@app.middleware("http")
+async def protect_local_mutations(request: Request, call_next):
+    # Parse bracketed IPv6 correctly; accept exact configured hosts only.
+    hosts = request.headers.getlist("host")
+    try:
+        host = urlsplit("//" + hosts[0]) if len(hosts) == 1 else None
+        valid_host = (host is not None and host.hostname in allowed_hosts
+                      and host.username is None and not (host.path or host.query or host.fragment)
+                      and (host.port is None or 0 < host.port <= 65535))
+    except ValueError:
+        valid_host = False
+    if not valid_host:
+        return JSONResponse({"detail": "Invalid host header"}, status_code=400)
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        origin = request.headers.get("origin")
+        same_origin = True
+        if origin:
+            try:
+                parsed = urlsplit(origin)
+                same_origin = (parsed.scheme, parsed.netloc) == (request.url.scheme, request.url.netloc)
+            except ValueError:
+                same_origin = False
+        if not same_origin or request.headers.get("sec-fetch-site") == "cross-site":
+            return JSONResponse({"detail": "Cross-origin mutations are not allowed"}, status_code=403)
+    return await call_next(request)
+
+# Register API Routers
+app.include_router(dashboard_router)
+app.include_router(models_router)
+app.include_router(hardware_router)
+app.include_router(knowledge_router)
+app.include_router(security_router)
+app.include_router(tasks_router)
+app.include_router(receipts_router)
+
+@app.get("/health")
+def health_check():
+    return {
+        "system": "VEGA",
+        "status": "OPERATIONAL",
+        "mode": "SIMULATION",
+        "egress": "SIMULATED COUNTERS ONLY; OS EGRESS NOT VERIFIED"
+    }
+
+# Mount static frontend assets
+if FRONTEND_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+
+    @app.get("/")
+    def serve_frontend_index():
+        index_file = FRONTEND_DIR / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file)
+        return {"message": "Vega UI not built yet. Access /docs for API schema."}

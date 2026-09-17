@@ -1,0 +1,15 @@
+services:
+  vega-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vega-sovereign-runtime:latest
+    container_name: vega_runtime
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./data:/app/data
+    network_mode: "bridge"
+    restart: unless-stopped
+    environment:
+      - VEGA_RUNTIME_MODE=SIMULATION
