@@ -45,9 +45,3 @@ def switch_profile(profile_id: str) -> Dict[str, Any]:
 @router.get("/eligibility")
 def get_model_eligibility() -> List[Dict[str, Any]]:
     return evaluate_model_eligibility()
-
-@router.get("/container")
-def get_container_status() -> Dict[str, Any]:
-    from vega.runtime.container import ContainerExecutionInterface
-    container_interface = ContainerExecutionInterface()
-    return container_interface.get_status()

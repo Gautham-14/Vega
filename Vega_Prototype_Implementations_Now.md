@@ -956,7 +956,6 @@ The following should remain outside the current prototype:
 - real confidential-computing hardware integration
 - TPM/TEE/HSM deployment
 - confidential GPU deployment
-- Kubernetes Confidential Containers
 - full production Key Broker Service
 - production SIEM
 - real PLC/SCADA control
@@ -974,7 +973,7 @@ These can remain as production/future architecture items.
 After these implementations, Vega should no longer be presented as only:
 
 ```text
-Local LLM + RAG + Docker
+Local LLM + RAG + governed runtime
 ```
 
 The prototype should demonstrate Vega as:

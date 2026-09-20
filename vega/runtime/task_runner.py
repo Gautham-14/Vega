@@ -19,8 +19,6 @@ from vega.runtime.evidence_gate import EvidenceGate, Claim
 from vega.models.base import ModelRequest
 from vega.receipts.generator import generate_sovereignty_receipt
 
-from vega.runtime.container import ContainerExecutionInterface
-
 class TaskRunner:
     """
     Coordinates risk assessment, context sanitization, enclave isolation,
@@ -30,7 +28,6 @@ class TaskRunner:
         self.firewall = ContextFirewall()
         self.router = ModelRouter()
         self.evidence_gate = EvidenceGate()
-        self.container_engine = ContainerExecutionInterface()
 
     def run_pump_inspection_demo(
         self, task_id: Optional[str] = None, include_poisoned_patch: bool = True,
@@ -102,12 +99,10 @@ class TaskRunner:
         log_step("RISK_ASSESSMENT", f"Assigned Risk Level: {risk_level} (Critical rotating slurry pump in hydrocracker feed loop)", "WARN" if risk_level == "HIGH" else "INFO")
 
         # -------------------------------------------------------------
-        # 2. Ephemeral Enclave & Container Interface
+        # 2. Ephemeral Enclave
         # -------------------------------------------------------------
         log_step("ENCLAVE", f"Spawned temporary isolated enclave at: {enclave.enclave_dir}", "SUCCESS")
 
-        container_status = self.container_engine.get_status()
-        log_step("CONTAINER_INTERFACE", f"Container execution sandbox: {container_status['fallback_mode']} (Mandatory: No)", "INFO")
         log_step("NETWORK_POLICY", "Demo uses local model adapters. OS-level network egress is not enforced or measured.", "INFO")
 
         # -------------------------------------------------------------
@@ -294,7 +289,6 @@ class TaskRunner:
                              for model in (selected_model, calc_model, vision_model)],
             "sop_sha256": authoritative_sop["sha256"],
             "enclave_path": str(enclave.enclave_dir),
-            "container_status": container_status,
             "input_files": [file["filename"] for file in enclave.mounted_files],
             "input_hashes": [{"filename": file["filename"], "sha256": file["sha256"]} for file in enclave.mounted_files],
             "authoritative_sop": authoritative_sop["filename"],
@@ -363,7 +357,6 @@ class TaskRunner:
             },
             "claims": evaluated_claims,
             "zero_egress_metrics": egress_metrics,
-            "container_sandbox": container_status,
             "artifact_filename": artifact_filename,
             "artifact_content": artifact_markdown,
             "receipt": receipt,

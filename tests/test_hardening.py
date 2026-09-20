@@ -308,15 +308,6 @@ vm.runInContext(fs.readFileSync(process.argv[1], 'utf8') + '\n globalThis.app = 
     assert response.json()["integrity_verified"] is True
 
 
-def test_container_preview_does_not_claim_execution(monkeypatch):
-    from vega.runtime.container import ContainerExecutionInterface
-    engine = ContainerExecutionInterface()
-    monkeypatch.setattr(engine, "engine_type", "docker")
-    result = engine.execute_in_container_or_fallback("TEST", config.WORKSPACES_DIR, ["echo", "test"])
-    assert result["executed_in_container"] is False
-    assert result["status"] == "NOT_EXECUTED"
-
-
 def test_connection_context_closes_the_database_handle():
     from vega.storage.database import get_db_connection
     with get_db_connection() as connection:

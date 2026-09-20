@@ -64,7 +64,7 @@ Interactive schemas are available at `/docs`. All `/api/control` routes except `
 - `/api/control/learning/review` validates a future training plan without enabling training or retaining chat history.
 - `/api/control/retention/sweep` lets Security Officer or Key Custodian immediately apply expiry. A background sweep also runs while local demo mode is enabled.
 
-The original manifest registry, document list, six-test legacy demo, evidence gate and self-hashed legacy receipts remain available for compatibility. They cannot access the new protected source ciphertext or retained artifact keys. The protected path and its chained audit records are surfaced together on the new control-plane page; the legacy Receipts page retains its original format.
+The original manifest registry, document list, six-test legacy demo, evidence gate and self-hashed legacy receipts remain available for compatibility. They cannot access the new protected source ciphertext or retained artifact keys. The protected path and its chained audit records are surfaced together on the new control-plane page; the legacy Receipts page retains its original format. Run Vega directly with Python.
 
 ## Runtime boundaries
 

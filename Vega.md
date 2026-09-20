@@ -485,7 +485,7 @@ Network Egress:          0 bytes
 
 The air-gap applies to more than the LLM.
 
-Vega can package and validate Python wheels, NPM packages, Docker images, OCR models, embedding models, fonts, document conversion libraries, application binaries, runtime configuration, checksums, signatures, and SBOM data.
+Vega can package and validate Python wheels, NPM packages, OCR models, embedding models, fonts, document conversion libraries, application binaries, runtime configuration, checksums, signatures, and SBOM data.
 
 ## Example End-to-End Workflow
 

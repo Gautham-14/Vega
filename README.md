@@ -11,7 +11,7 @@ python -m pip install -r requirements.txt
 python run_vega.py
 ```
 
-Open `http://127.0.0.1:8000`. The server binds to localhost by default. Set `VEGA_DATA_DIR` to choose where SQLite records and generated files live; otherwise Vega uses `data/` beside the source code. That directory is ignored by Git and Docker builds.
+Open `http://127.0.0.1:8000`. The server binds to localhost by default. Set `VEGA_DATA_DIR` to choose where SQLite records and generated files live; otherwise Vega uses `data/` beside the source code. That directory is ignored by Git.
 
 The **Model registry** stores metadata, resource requirements, and a SHA-256 checksum of the manifest fields. It does not install or validate model weights. Newly registered manifests remain in quarantine. The **Knowledge base** accepts your own text and metadata, including revision, department, classification, and approval status. The **Security center** scans submitted text with local rules. It is a finite heuristic check, not a complete defense against malicious instructions.
 
@@ -34,10 +34,6 @@ The tests create private temporary storage and explicitly load synthetic fixture
 - `frontend/` — local HTML, CSS, JavaScript, and favicon.
 - `tests/` — isolated regression tests and synthetic fixtures.
 - `run_vega.py` — local launcher.
-- `Dockerfile` and `docker-compose.yml` — optional container deployment.
-
-The Docker image installs runtime dependencies only and exposes the app on the host loopback interface through Compose. Docker bridge networking by itself does not block outbound traffic from the container.
-
 ## Vercel hosted preview
 
 Vercel detects the FastAPI entrypoint in `pyproject.toml`. On Vercel, Vega uses temporary function storage and disables all mutating API requests. The hosted site is a read-only interface preview: it cannot persist model manifests, documents, scans, or receipts. Run Vega locally for the working private workspace. Do not upload private data to the hosted preview.
