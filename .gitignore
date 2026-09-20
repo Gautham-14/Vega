@@ -3,3 +3,34 @@ __pycache__/
 .pytest_cache/
 .venv/
 data/
+
+# Local runtime state and secrets
+*.db
+*.sqlite
+*.sqlite3
+*.log
+control.key
+*.enc
+
+# Coverage and test reports
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# Editor and operating-system files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Build and deployment output
+build/
+dist/
+*.egg-info/
+
+# Local reference material; implementation documentation remains tracked
+*.pdf

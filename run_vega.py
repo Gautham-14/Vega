@@ -4,6 +4,7 @@ Usage: python run_vega.py [--port 8000] [--host 127.0.0.1]
 """
 import sys
 import argparse
+import os
 import uvicorn
 from pathlib import Path
 
@@ -16,7 +17,10 @@ def main():
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host interface (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
+    parser.add_argument("--demo", action="store_true", help="Enable the local sovereign control-plane simulation (no automatic seeding)")
     args = parser.parse_args()
+    if args.demo:
+        os.environ["VEGA_ENABLE_DEMO_ENDPOINTS"] = "1"
 
     print("=" * 72)
     print(" VEGA - SOVEREIGN INDUSTRIAL AI RUNTIME")

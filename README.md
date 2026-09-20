@@ -1,6 +1,6 @@
 # Vega
 
-Vega is a local FastAPI workspace for recording model manifests and documents, inspecting text with a rule-based context scanner, and reviewing stored receipts. The interface starts empty: it does not load sample models, documents, tasks, or security events into the application database.
+Vega is a local FastAPI workspace with a sovereign AI control-plane prototype: approved stack identities, signed purpose leases, encrypted assets, selective disclosure, compartment isolation, two-person approval, controlled export, memory hygiene and chained receipts. The interface starts empty; synthetic fixtures are loaded only by an explicit demo action.
 
 ## Run locally
 
@@ -15,7 +15,9 @@ Open `http://127.0.0.1:8000`. The server binds to localhost by default. Set `VEG
 
 The **Model registry** stores metadata, resource requirements, and a SHA-256 checksum of the manifest fields. It does not install or validate model weights. Newly registered manifests remain in quarantine. The **Knowledge base** accepts your own text and metadata, including revision, department, classification, and approval status. The **Security center** scans submitted text with local rules. It is a finite heuristic check, not a complete defense against malicious instructions.
 
-Synthetic task, self-test, qualification, comparison, and simulated hardware actions are disabled by default. Developers can opt in with `VEGA_ENABLE_DEMO_ENDPOINTS=1`; this does not seed records automatically. Vega does not currently run a real model or enforce operating-system network isolation. Do not use the prototype as an industrial approval system.
+Synthetic task, self-test, qualification, comparison, and simulated hardware actions are disabled by default. Run `python run_vega.py --demo` (or set `VEGA_ENABLE_DEMO_ENDPOINTS=1`) and open **Sovereign control plane** to prepare and approve the synthetic workflow. This does not seed records automatically. The page demonstrates Capsule changes, attestation before decryption, purpose-bound denial, a cross-compartment privacy tripwire, cache isolation, cleanup and receipt-chain verification.
+
+See [IMPLEMENTATION.md](IMPLEMENTATION.md) for the walkthrough, API usage, requirements-to-code map and precise simulation boundaries. The protected control-plane source store is encrypted and separate from the original metadata registries. The prototype uses selectable local personas to demonstrate separation of duties; it does not provide production authentication, real model inference, hardware attestation or operating-system network isolation.
 
 ## Test
 

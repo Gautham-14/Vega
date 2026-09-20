@@ -84,7 +84,7 @@ class ContextFirewall:
                 f"Context Firewall blocked suspicious content from: {source_identifier}",
                 source_identifier,
                 rule_names,
-                text[:500],
+                None,  # Audit rule IDs, never confidential document or query text.
                 action
             ))
 

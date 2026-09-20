@@ -52,7 +52,7 @@ const App = {
     this.closeNav();
     window.scrollTo(0,0);
     document.querySelector(`#page-${page} h1`)?.focus({preventScroll:true});
-    ({overview:()=>this.loadOverview(),models:()=>this.loadModels(),knowledge:()=>this.loadDocuments(),security:()=>this.loadEvents(),receipts:()=>this.loadReceipts(),system:()=>this.loadOverview()})[page]();
+    ({overview:()=>this.loadOverview(),models:()=>this.loadModels(),knowledge:()=>this.loadDocuments(),security:()=>this.loadEvents(),receipts:()=>this.loadReceipts(),system:()=>this.loadOverview(),control:()=>Control.load()})[page]();
   },
   openNav() { document.body.classList.add('nav-open'); document.getElementById('nav-scrim').hidden = false; document.getElementById('nav-toggle').setAttribute('aria-expanded','true'); document.querySelector('[data-page].active')?.focus(); },
   closeNav() { document.body.classList.remove('nav-open'); document.getElementById('nav-scrim').hidden = true; document.getElementById('nav-toggle').setAttribute('aria-expanded','false'); },

@@ -20,6 +20,11 @@ from vega.api.routes.knowledge import router as knowledge_router
 from vega.api.routes.security import router as security_router
 from vega.api.routes.tasks import router as tasks_router
 from vega.api.routes.receipts import router as receipts_router
+from vega.api.routes.control import router as control_router
+from vega.control.store import init_control, Denied
+import asyncio
+import contextlib
+import logging
 
 from contextlib import asynccontextmanager
 
@@ -27,7 +32,23 @@ from contextlib import asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize empty local storage on server start."""
     init_db()
-    yield
+    init_control()
+    async def retention_worker():
+        from vega.control.artifacts import sweep
+        while True:
+            try:
+                await asyncio.to_thread(sweep)
+            except Exception:
+                logging.getLogger("vega.retention").error("Retention sweep failed; inspect the local security ledger")
+            await asyncio.sleep(30)
+    worker = asyncio.create_task(retention_worker()) if os.environ.get("VEGA_ENABLE_DEMO_ENDPOINTS") == "1" else None
+    try:
+        yield
+    finally:
+        if worker:
+            worker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await worker
 
 app = FastAPI(
     title="Vega Sovereign AI Runtime",
@@ -79,6 +100,17 @@ app.include_router(knowledge_router)
 app.include_router(security_router)
 app.include_router(tasks_router)
 app.include_router(receipts_router)
+app.include_router(control_router)
+
+
+@app.exception_handler(Denied)
+async def control_denied(request: Request, exc: Denied):
+    return JSONResponse(status_code=403, content={"detail": str(exc), "code": exc.code, "event_id": exc.event_id})
+
+
+@app.exception_handler(ValueError)
+async def invalid_control_request(request: Request, exc: ValueError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 @app.get("/health")
 def health_check():
