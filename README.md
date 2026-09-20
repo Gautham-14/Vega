@@ -19,6 +19,10 @@ Synthetic task, self-test, qualification, comparison, and simulated hardware act
 
 See [IMPLEMENTATION.md](IMPLEMENTATION.md) for the walkthrough, API usage, requirements-to-code map and precise simulation boundaries. The protected control-plane source store is encrypted and separate from the original metadata registries. The prototype uses selectable local personas to demonstrate separation of duties; it does not provide production authentication, real model inference, hardware attestation or operating-system network isolation.
 
+## Simulated telemetry
+
+The Overview resource card and **Telemetry** page show clearly labeled, browser-generated CPU, memory, GPU/VRAM and disk activity. Choose Idle workspace, Inspection review or Busy queue; pause/resume the feed or reset its two-minute sample history. Samples update every three seconds while the tab is visible. Reduced-motion preferences start the feed paused. No models, downloads or extra dependencies are needed. This display is separate from actual hardware eligibility checks and workspace/audit records, and also works in the read-only hosted preview.
+
 ## Test
 
 ```bash

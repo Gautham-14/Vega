@@ -2,7 +2,7 @@ const App = {
   page: 'overview',
   hostedPreview: false,
   receipt: null,
-  labels: {overview:'Overview',models:'Model registry',knowledge:'Knowledge base',security:'Security center',receipts:'Receipts',system:'System'},
+  labels: {overview:'Overview',models:'Model registry',knowledge:'Knowledge base',security:'Security center',receipts:'Receipts',system:'Telemetry'},
   escape(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); },
   pretty(value) { return String(value ?? '').toLowerCase().replaceAll('_',' ').replace(/^./, c => c.toUpperCase()); },
   async request(path, options) {
@@ -68,14 +68,6 @@ const App = {
       document.getElementById('document-count').textContent = data.registered_documents;
       document.getElementById('receipt-count').textContent = data.recent_receipts_count;
       document.getElementById('security-status').textContent = data.recent_security_events_count;
-      const hw = data.hardware_telemetry;
-      document.getElementById('cpu-info').textContent = `${hw.cpu_cores} cores · ${hw.cpu_usage_pct}% in use`;
-      document.getElementById('ram-info').textContent = `${(hw.available_ram_mb/1024).toFixed(1)} / ${(hw.total_ram_mb/1024).toFixed(1)} GB`;
-      document.getElementById('cpu-meter').style.width = `${Math.max(0,Math.min(100,hw.cpu_usage_pct))}%`;
-      document.getElementById('ram-meter').style.width = `${Math.max(0,Math.min(100,hw.ram_usage_pct))}%`;
-      document.getElementById('system-cpu').textContent = hw.cpu_cores;
-      document.getElementById('system-total-ram').textContent = `${(hw.total_ram_mb/1024).toFixed(1)} GB`;
-      document.getElementById('system-free-ram').textContent = `${(hw.available_ram_mb/1024).toFixed(1)} GB`;
       document.getElementById('recent-events').innerHTML = data.recent_security_events.length ? data.recent_security_events.map(e => `<div class="event"><strong>${this.escape(this.pretty(e.event_type))}</strong><small>${this.escape(e.source_document)}</small></div>`).join('') : '<p class="empty">No security events yet.</p>';
     } catch (error) {
       document.getElementById('connection-status').textContent = 'Runtime unavailable';
@@ -187,6 +179,7 @@ const App = {
     } finally { submit.disabled = false; }
   },
   async init() {
+    Telemetry.init();
     try {
       const health = await this.request('/health');
       if (health.deployment_mode === 'HOSTED_PREVIEW') {
@@ -201,9 +194,6 @@ const App = {
         }
         document.querySelector('#page-overview .page-heading p').textContent = 'Explore the interface. Private data stays in your local workspace.';
         document.querySelector('#page-overview .hero p').textContent = 'Run Vega locally to register a model manifest, add documents, and inspect context.';
-        document.querySelector('#page-overview .columns .card-head p').textContent = 'Vercel function telemetry';
-        document.querySelector('#page-system .page-heading p').textContent = 'Hosted function capacity and prototype boundaries.';
-        document.querySelector('#page-system .card-head p').textContent = 'Reported by the hosted function';
       }
     } catch (_) { /* The regular connection indicator reports API failures. */ }
     document.getElementById('document-form').elements.effective_date.value = new Date().toISOString().slice(0,10);
