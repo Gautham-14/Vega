@@ -65,6 +65,8 @@ const Telemetry = {
       }).join(' ');
       document.getElementById(`telemetry-line-${metric}`).setAttribute('points', points);
     }
+    document.getElementById('overview-cpu-line').setAttribute('points', this.samples.map((sample, i) =>
+      `${(i / (this.historySize - 1) * 720).toFixed(1)},${(90 - sample.cpu * 0.9).toFixed(1)}`).join(' '));
     document.getElementById('telemetry-chart').setAttribute('aria-label',
       `Simulated resource history. Current CPU ${current.cpu.toFixed(0)} percent, memory ${ramPercent.toFixed(0)} percent, GPU ${current.gpu.toFixed(0)} percent.`);
   },

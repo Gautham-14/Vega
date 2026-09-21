@@ -3,6 +3,8 @@ const App = {
   hostedPreview: false,
   receipt: null,
   labels: {overview:'Overview',models:'Model registry',knowledge:'Knowledge base',security:'Security center',receipts:'Receipts',system:'Telemetry'},
+  icon(name) { return `<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#${name}"/></svg>`; },
+  empty(icon, title, copy, action = '') { return `<div class="empty-state"><span class="empty-icon">${this.icon(icon)}</span><h3>${title}</h3><p>${copy}</p>${action}</div>`; },
   escape(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); },
   pretty(value) { return String(value ?? '').toLowerCase().replaceAll('_',' ').replace(/^./, c => c.toUpperCase()); },
   async request(path, options) {
@@ -54,9 +56,9 @@ const App = {
     document.querySelector(`#page-${page} h1`)?.focus({preventScroll:true});
     ({overview:()=>this.loadOverview(),models:()=>this.loadModels(),knowledge:()=>this.loadDocuments(),security:()=>this.loadEvents(),receipts:()=>this.loadReceipts(),system:()=>this.loadOverview(),control:()=>Control.load()})[page]();
   },
-  openNav() { document.body.classList.add('nav-open'); document.getElementById('nav-scrim').hidden = false; document.getElementById('nav-toggle').setAttribute('aria-expanded','true'); document.querySelector('[data-page].active')?.focus(); },
-  closeNav() { document.body.classList.remove('nav-open'); document.getElementById('nav-scrim').hidden = true; document.getElementById('nav-toggle').setAttribute('aria-expanded','false'); },
-  openDialog(id) { const dialog = document.getElementById(id); dialog.querySelector('.form-error').hidden = true; dialog.showModal(); dialog.querySelector('input')?.focus(); },
+  openNav() { document.body.classList.add('nav-open'); document.getElementById('workspace').inert = true; document.getElementById('nav-scrim').hidden = false; document.getElementById('nav-toggle').setAttribute('aria-expanded','true'); document.querySelector('[data-page].active')?.focus(); },
+  closeNav() { document.body.classList.remove('nav-open'); document.getElementById('workspace').inert = false; document.getElementById('nav-scrim').hidden = true; document.getElementById('nav-toggle').setAttribute('aria-expanded','false'); },
+  openDialog(id) { const dialog = document.getElementById(id); const error = dialog.querySelector('.form-error'); if (error) error.hidden = true; dialog.showModal(); dialog.querySelector('input')?.focus(); },
   closeDialog() { for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); },
   async loadOverview() {
     try {
@@ -68,7 +70,7 @@ const App = {
       document.getElementById('document-count').textContent = data.registered_documents;
       document.getElementById('receipt-count').textContent = data.recent_receipts_count;
       document.getElementById('security-status').textContent = data.recent_security_events_count;
-      document.getElementById('recent-events').innerHTML = data.recent_security_events.length ? data.recent_security_events.map(e => `<div class="event"><strong>${this.escape(this.pretty(e.event_type))}</strong><small>${this.escape(e.source_document)}</small></div>`).join('') : '<p class="empty">No security events yet.</p>';
+      document.getElementById('recent-events').innerHTML = data.recent_security_events.length ? data.recent_security_events.map(e => `<div class="event"><strong>${this.escape(this.pretty(e.event_type))}</strong><small>${this.escape(e.source_document)}</small></div>`).join('') : this.empty('shield', 'A fresh activity log', 'Scanner events will appear here after you inspect text in the security center.');
     } catch (error) {
       document.getElementById('connection-status').textContent = 'Runtime unavailable';
       document.getElementById('connection-dot').classList.add('offline');
@@ -82,14 +84,14 @@ const App = {
         const summary = m.benchmark_summary || {};
         const issue = summary.integrity_check === 'FAIL_HASH_MISMATCH' ? 'Checksum mismatch' : summary.license_compliant === false ? 'License review required' : '';
         return `<tr><td><strong>${this.escape(m.name)}</strong><small>${this.escape(m.id)} · ${this.escape(m.version)}</small></td><td>${this.escape((m.capabilities || []).join(', '))}</td><td>${this.escape(m.memory_req_mb)} MB · ${this.escape(m.cpu_cores_req)} cores</td><td><span class="badge">${this.escape(this.pretty(m.status))}</span>${issue ? `<small>${issue}</small>` : ''}</td></tr>`;
-      }).join('') : '<tr><td colspan="4" class="empty">No models registered. Add a manifest to begin.</td></tr>';
+      }).join('') : `<tr><td colspan="4" class="empty">${this.empty('layers', 'Your model registry starts here', 'Keep model identity, capabilities and resource requirements together. Registration saves metadata only.', this.hostedPreview ? '' : '<button class="button secondary" data-open="model-dialog">Add your first manifest</button>')}</td></tr>`;
       this.reapply('models-body');
     } catch (error) { this.showError('models-body',4,error); }
   },
   async loadDocuments() {
     try {
       const rows = await this.request('/api/knowledge');
-      document.getElementById('documents-body').innerHTML = rows.length ? rows.map(d => `<tr><td><strong>${this.escape(d.title)}</strong><small>${this.escape(d.filename)}</small></td><td>${this.escape(d.revision)}</td><td><span class="badge">${this.escape(this.pretty(d.status))}</span></td><td>${this.escape(d.department)}</td><td>${this.escape(this.pretty(d.classification))}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No documents yet. Add your own source to begin.</td></tr>';
+      document.getElementById('documents-body').innerHTML = rows.length ? rows.map(d => `<tr><td><strong>${this.escape(d.title)}</strong><small>${this.escape(d.filename)}</small></td><td>${this.escape(d.revision)}</td><td><span class="badge">${this.escape(this.pretty(d.status))}</span></td><td>${this.escape(d.department)}</td><td>${this.escape(this.pretty(d.classification))}</td></tr>`).join('') : `<tr><td colspan="5" class="empty">${this.empty('folder', 'A home for your source documents', 'Add text with its revision, department and access classification.', this.hostedPreview ? '' : '<button class="button secondary" data-open="document-dialog">Add your first document</button>')}</td></tr>`;
       this.reapply('documents-body');
     } catch (error) { this.showError('documents-body',5,error); }
   },
@@ -102,7 +104,7 @@ const App = {
   async loadReceipts() {
     try {
       const rows = await this.request('/api/receipts');
-      document.getElementById('receipts-body').innerHTML = rows.length ? rows.map(r => `<tr data-search="${this.escape(`${r.id} ${r.task_id}`)}"><td><strong>${this.escape(r.id)}</strong></td><td>${this.escape(r.task_id)}</td><td>${this.escape((r.created_at || '').slice(0,19))}</td><td><button class="button secondary small" data-receipt="${this.escape(r.task_id)}">Open</button></td></tr>`).join('') : '<tr><td colspan="4" class="empty">No receipts recorded.</td></tr>';
+      document.getElementById('receipts-body').innerHTML = rows.length ? rows.map(r => `<tr data-search="${this.escape(`${r.id} ${r.task_id}`)}"><td><strong>${this.escape(r.id)}</strong></td><td>${this.escape(r.task_id)}</td><td>${this.escape((r.created_at || '').slice(0,19))}</td><td><button class="button secondary small" data-receipt="${this.escape(r.task_id)}">Open</button></td></tr>`).join('') : `<tr><td colspan="4" class="empty">${this.empty('receipt', 'No legacy task receipts yet', 'Looking for governed task records? They live in the control plane under Audit & records.', '<button class="button secondary" data-audit>View governance records</button>')}</td></tr>`;
       this.reapply('receipts-body');
     } catch (error) { this.showError('receipts-body',4,error); }
   },
@@ -193,7 +195,7 @@ const App = {
           button.title = 'Available in the local workspace';
         }
         document.querySelector('#page-overview .page-heading p').textContent = 'Explore the interface. Private data stays in your local workspace.';
-        document.querySelector('#page-overview .hero p').textContent = 'Run Vega locally to register a model manifest, add documents, and inspect context.';
+        document.querySelector('#page-overview .hero p').textContent = 'Explore the interface and simulated telemetry. Run Vega locally to add sources and follow the governed task demonstration.';
       }
     } catch (_) { /* The regular connection indicator reports API failures. */ }
     document.getElementById('document-form').elements.effective_date.value = new Date().toISOString().slice(0,10);
@@ -203,8 +205,12 @@ const App = {
     document.getElementById('hash-button').addEventListener('click',()=>this.hashManifest().catch(e=>this.notify(e.message,true)));
     for (const form of document.querySelectorAll('dialog form')) form.addEventListener('submit',event=>{event.preventDefault();this.submitForm(form);});
     document.addEventListener('click',event=>{
-      const target = event.target.closest('[data-open],[data-close],[data-goto],[data-receipt],#verify-receipt,#export-json,#export-md');
+      const target = event.target.closest('[data-open],[data-close],[data-goto],[data-receipt],[data-guide],[data-guide-goto],[data-audit],#verify-receipt,#export-json,#export-md');
       if (!target) return;
+      if (target.disabled) return;
+      if (target.hasAttribute('data-guide')) this.openDialog('guide-dialog');
+      if (target.dataset.guideGoto) { this.closeDialog(); location.hash = target.dataset.guideGoto; }
+      if (target.hasAttribute('data-audit')) { Control.selectTab('audit'); location.hash = 'control'; }
       if (target.dataset.open) this.openDialog(target.dataset.open);
       if (target.hasAttribute('data-close')) this.closeDialog();
       if (target.dataset.goto) location.hash = target.dataset.goto;
@@ -214,10 +220,20 @@ const App = {
       if (target.id === 'export-md') this.downloadReceipt('markdown');
     });
     document.addEventListener('input',event=>{if(event.target.matches('[data-search]')) this.filter(event.target);});
-    document.addEventListener('keydown',event=>{if(event.key==='Escape') this.closeNav();});
+    document.addEventListener('keydown',event=>{
+      if (!document.body.classList.contains('nav-open')) return;
+      if (event.key==='Escape') { this.closeNav(); document.getElementById('nav-toggle').focus(); }
+      if (event.key==='Tab') {
+        const links = [...document.querySelectorAll('#sidebar a,#sidebar button')];
+        const current = links.indexOf(document.activeElement);
+        event.preventDefault();
+        links[(current + (event.shiftKey ? -1 : 1) + links.length) % links.length].focus();
+      }
+    });
+    window.addEventListener('resize',()=>{if(window.innerWidth>750) this.closeNav();});
     window.addEventListener('hashchange',()=>this.navigate(location.hash.slice(1)));
     this.navigate(location.hash.slice(1));
-    setInterval(()=>{if(this.page==='overview'||this.page==='system') this.loadOverview();},30000);
+    setInterval(()=>{if(this.page==='overview'||this.page==='system') this.loadOverview(); if(this.page==='control'&&Control.state&&!Control.busy) Control.renderGuide();},30000);
   }
 };
 document.addEventListener('DOMContentLoaded',()=>App.init());

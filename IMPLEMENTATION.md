@@ -11,13 +11,15 @@ python run_vega.py --demo
 
 Open `http://127.0.0.1:8000/#control`.
 
-1. As **Operator**, select **Prepare demo**. This explicitly creates one synthetic encrypted document, one verified/qualified mock package, an unapproved Capsule, and two approval requests. Startup itself remains empty.
+The Control plane has **Setup & approvals**, **Run a task**, and **Audit & records** tabs. The next-step guide can select the appropriate demo persona and focus its action; it never approves or executes automatically.
+
+1. In **Setup & approvals**, as **Operator**, select **Prepare demo**. This explicitly creates one synthetic encrypted document, one verified/qualified mock package, an unapproved Capsule, and two approval requests. Startup itself remains empty.
 2. Select **Model Custodian** and approve both requests. Select **Security Officer** and approve both requests.
 3. Select **Model Custodian**, then **Activate approved stack**.
 4. Select **Data Owner**, then **Issue / renew purpose lease**. The lease is valid for 15 minutes and permits only an approval note for the Operator.
-5. Select **Operator**, then **Run protected task**. Inspect the approved redacted deliverable, classification, source revisions, retrieval route, attestation, key-release decision, labels, cleanup, and receipt.
-6. Run **Change Capsule component**, **Attempt wrong purpose**, **Inject Finance tripwire**, and **Compare cache isolation**. Each executes real prototype policy code; the changed Capsule stays unapproved and the Finance canary blocks output.
-7. Select **Verify receipt chain** and **Run 17 adversarial tests**. Self-tests run in a subprocess with disposable storage; only results, events, and a summary receipt reach the active workspace.
+5. Select **Operator**, open **Run a task**, then **Run protected task**. Inspect the approved redacted deliverable, classification, source revisions, retrieval route, attestation, key-release decision, labels, cleanup, and receipt.
+6. Expand **Explore four policy scenarios** to run **Change Capsule component**, **Attempt wrong purpose**, **Inject Finance tripwire**, and **Compare cache isolation**. Each executes real prototype policy code; the changed Capsule stays unapproved and the Finance canary blocks output.
+7. In **Audit & records**, select **Verify receipt chain** and **Run 17 adversarial tests**. Self-tests run in a subprocess with disposable storage; only results, events, and a summary receipt reach the active workspace.
 
 Approval requests expire after 15 minutes. **Prepare demo** renews expired or rejected requests without replacing previous audit records. **Issue / renew purpose lease** creates a fresh signed lease. Source and package data remain unchanged.
 

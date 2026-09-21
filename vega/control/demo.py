@@ -35,8 +35,9 @@ def prepare():
     if existing:
         for index, action in enumerate(("package", "capsule")):
             request = require("approval", existing["approval_ids"][index])
-            if request["status"] == "REJECTED" or (request["status"] == "PENDING" and request["expires_at"] <= time.time()):
-                key = action + "_id"
+            key = action + "_id"
+            needs_activation = require(action, existing[key])["status"] != "APPROVED"
+            if needs_activation and (request["status"] == "REJECTED" or request["expires_at"] <= time.time()):
                 existing["approval_ids"][index] = request_approval(action, {key: existing[key]}, "operator")["id"]
         put("demo", "main", existing)
         return existing

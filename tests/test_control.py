@@ -47,6 +47,28 @@ def test_end_to_end_disclosure_hygiene_receipt(ready):
     assert result["network"]["external_api_calls"] == 0
 
 
+def test_demo_can_renew_approvals_that_expired_before_activation():
+    fixture = demo.prepare()
+    original = list(fixture["approval_ids"])
+    for identity in original:
+        policy.decide(identity, "model-custodian", "APPROVE")
+        policy.decide(identity, "security-officer", "APPROVE")
+        request = store.require("approval", identity)
+        request["expires_at"] = time.time() - 1
+        store.put("approval", identity, request)
+    renewed = demo.prepare()
+    assert not set(original) & set(renewed["approval_ids"])
+    assert all(store.require("approval", identity)["status"] == "PENDING" for identity in renewed["approval_ids"])
+    with pytest.raises(store.Denied):
+        demo.activate("model-custodian")
+    for identity in renewed["approval_ids"]:
+        policy.decide(identity, "model-custodian", "APPROVE")
+        policy.decide(identity, "security-officer", "APPROVE")
+    demo.activate("model-custodian")
+    assert store.require("capsule", renewed["capsule_id"])["status"] == "APPROVED"
+    assert store.verify_chain()["is_valid"]
+
+
 @pytest.mark.parametrize("component", sorted(capsules.COMPONENTS))
 def test_every_capsule_component_is_bound(ready, component):
     components = deepcopy(store.require("capsule", ready["capsule_id"])["components"])
