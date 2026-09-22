@@ -1,9 +1,9 @@
 """
-Tests for Vega Context Firewall and Injection Detection
+Tests for Aegis Context Firewall and Injection Detection
 """
 import pytest
-from vega.storage.database import init_db
-from vega.security.firewall import ContextFirewall, get_recent_security_events
+from aegis.storage.database import init_db
+from aegis.security.firewall import ContextFirewall, get_recent_security_events
 
 @pytest.fixture(autouse=True)
 def setup_firewall():

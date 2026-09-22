@@ -1,12 +1,12 @@
 """
-Tests for Vega REST API Endpoints
+Tests for Aegis REST API Endpoints
 """
 import pytest
 from starlette.testclient import TestClient
-from vega.api.server import app
-from vega.storage.database import init_db
-from vega.models.registry import seed_model_registry
-from vega.knowledge.demo_data import seed_knowledge_registry
+from aegis.api.server import app
+from aegis.storage.database import init_db
+from aegis.models.registry import seed_model_registry
+from aegis.knowledge.demo_data import seed_knowledge_registry
 
 @pytest.fixture(autouse=True)
 def setup_api():
@@ -27,7 +27,7 @@ def test_api_dashboard_status():
     resp = client.get("/api/dashboard/status")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["system_name"] == "VEGA"
+    assert data["system_name"] == "AEGIS"
     assert data["runtime_mode"] == "SIMULATION"
     assert data["internet"] == "NOT VERIFIED"
     assert data["security_tests_status"] in {"NOT RUN", "6 / 6 PASS"}
@@ -142,7 +142,7 @@ def test_api_hardware_profiles_switching():
 
 def test_api_model_shadow_comparison():
     client = TestClient(app)
-    resp_shadow = client.post("/api/models/VEGA-DEMO-VISION/shadow?baseline_id=VEGA-DEMO-TEXT")
+    resp_shadow = client.post("/api/models/AEGIS-DEMO-VISION/shadow?baseline_id=AEGIS-DEMO-TEXT")
     assert resp_shadow.status_code == 200
     shadow_data = resp_shadow.json()
     assert shadow_data["shadow_agreement_score"] > 90.0

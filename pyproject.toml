@@ -1,5 +1,5 @@
 [project]
-name = "vega-runtime"
+name = "aegis-runtime"
 version = "1.0.0"
 requires-python = ">=3.11"
 dependencies = [
@@ -11,4 +11,4 @@ dependencies = [
 ]
 
 [tool.vercel]
-entrypoint = "vega.api.server:app"
+entrypoint = "aegis.api.server:app"

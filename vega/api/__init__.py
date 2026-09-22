@@ -1,1 +1,0 @@
-"""Vega API package."""

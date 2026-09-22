@@ -1,11 +1,11 @@
 """
-Tests for Vega End-to-End Task Runner and Main Demo Workflow
+Tests for Aegis End-to-End Task Runner and Main Demo Workflow
 """
 import pytest
-from vega.storage.database import init_db
-from vega.models.registry import seed_model_registry
-from vega.knowledge.demo_data import seed_knowledge_registry
-from vega.runtime.task_runner import TaskRunner, get_all_tasks
+from aegis.storage.database import init_db
+from aegis.models.registry import seed_model_registry
+from aegis.knowledge.demo_data import seed_knowledge_registry
+from aegis.runtime.task_runner import TaskRunner, get_all_tasks
 
 @pytest.fixture(autouse=True)
 def setup_task_env():
@@ -18,7 +18,7 @@ def test_pump_inspection_demo_workflow():
     result = runner.run_pump_inspection_demo(include_poisoned_patch=True)
 
     assert result["status"] == "COMPLETED"
-    assert result["model_id"] == "VEGA-DEMO-TEXT"
+    assert result["model_id"] == "AEGIS-DEMO-TEXT"
     assert result["execution_mode"] == "SIMULATION MODE"
     assert result["authoritative_sop"] == "Pump_SOP_Rev8.txt"
     assert result["superseded_documents_rejected_count"] >= 2

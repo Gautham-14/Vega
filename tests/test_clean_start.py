@@ -2,11 +2,11 @@
 
 from starlette.testclient import TestClient
 
-from vega.api.server import app
+from aegis.api.server import app
 
 
 def test_fresh_workspace_has_no_seeded_data(monkeypatch):
-    monkeypatch.delenv("VEGA_ENABLE_DEMO_ENDPOINTS", raising=False)
+    monkeypatch.delenv("AEGIS_ENABLE_DEMO_ENDPOINTS", raising=False)
     with TestClient(app) as client:
         status = client.get("/api/dashboard/status").json()
         assert status["registered_models"] == 0

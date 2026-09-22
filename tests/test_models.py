@@ -1,9 +1,9 @@
 """
-Tests for Vega Model Registry, Mock Adapters, and Lifecycle
+Tests for Aegis Model Registry, Mock Adapters, and Lifecycle
 """
 import pytest
-from vega.storage.database import init_db
-from vega.models.registry import (
+from aegis.storage.database import init_db
+from aegis.models.registry import (
     seed_model_registry,
     get_all_models,
     get_model_by_id,
@@ -11,9 +11,9 @@ from vega.models.registry import (
     run_simulated_qualification,
     run_shadow_mode_simulation
 )
-from vega.models.mock_adapter import MockModelAdapter
-from vega.models.base import ModelRequest
-from vega.models.registry import compute_manifest_sha256
+from aegis.models.mock_adapter import MockModelAdapter
+from aegis.models.base import ModelRequest
+from aegis.models.registry import compute_manifest_sha256
 
 @pytest.fixture(autouse=True)
 def setup_database():
@@ -24,12 +24,12 @@ def test_model_seeding():
     models = get_all_models()
     assert len(models) >= 3
     model_ids = [m["id"] for m in models]
-    assert "VEGA-DEMO-TEXT" in model_ids
-    assert "VEGA-DEMO-VISION" in model_ids
-    assert "VEGA-DEMO-CODE" in model_ids
+    assert "AEGIS-DEMO-TEXT" in model_ids
+    assert "AEGIS-DEMO-VISION" in model_ids
+    assert "AEGIS-DEMO-CODE" in model_ids
 
 def test_mock_adapter_inference():
-    adapter = MockModelAdapter(model_id="VEGA-DEMO-TEXT")
+    adapter = MockModelAdapter(model_id="AEGIS-DEMO-TEXT")
     req = ModelRequest(prompt="Analyze Pump P-204 vibration reading of 7.2 mm/s against SOP.")
     resp = adapter.generate(req)
 
@@ -37,7 +37,7 @@ def test_mock_adapter_inference():
     assert "7.20 mm/s" in resp.content
     assert "Pump_SOP_Rev8" in resp.content
     assert resp.is_simulation is True
-    assert resp.model_id == "VEGA-DEMO-TEXT"
+    assert resp.model_id == "AEGIS-DEMO-TEXT"
     assert len(resp.reasoning_steps) > 0
 
 def test_model_import_and_quarantine():
@@ -104,6 +104,6 @@ def test_tampered_model_cannot_be_qualified():
         run_simulated_qualification("TAMPERED-CANDIDATE-8B")
 
 def test_shadow_mode_simulation():
-    shadow_res = run_shadow_mode_simulation("VEGA-DEMO-VISION", baseline_model_id="VEGA-DEMO-TEXT")
+    shadow_res = run_shadow_mode_simulation("AEGIS-DEMO-VISION", baseline_model_id="AEGIS-DEMO-TEXT")
     assert shadow_res["shadow_agreement_score"] > 90.0
     assert len(shadow_res["divergence_details"]) > 0

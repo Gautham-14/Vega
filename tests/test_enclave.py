@@ -1,9 +1,9 @@
 """
-Tests for Vega Ephemeral Task Enclave and Least-Privilege Isolation
+Tests for Aegis Ephemeral Task Enclave and Least-Privilege Isolation
 """
 import pytest
-from vega.runtime.enclave import EphemeralEnclave
-from vega.knowledge.registry import compute_file_sha256
+from aegis.runtime.enclave import EphemeralEnclave
+from aegis.knowledge.registry import compute_file_sha256
 
 def test_enclave_isolation_and_mounting():
     enclave = EphemeralEnclave(task_id="TEST-ENCLAVE-01", department="Engineering", equipment_id="Pump P-204")

@@ -1,10 +1,10 @@
 """
-Tests for Vega Sovereignty Receipts and Verification
+Tests for Aegis Sovereignty Receipts and Verification
 """
 import pytest
-from vega.storage.database import init_db
-from vega.receipts.generator import generate_sovereignty_receipt, get_all_receipts
-from vega.receipts.verifier import verify_receipt
+from aegis.storage.database import init_db
+from aegis.receipts.generator import generate_sovereignty_receipt, get_all_receipts
+from aegis.receipts.verifier import verify_receipt
 
 @pytest.fixture(autouse=True)
 def setup_db():
@@ -15,7 +15,7 @@ def test_receipt_generation_and_verification():
         "id": "TEST-TASK-99",
         "title": "Slurry Pump Inspection Note",
         "risk_level": "HIGH",
-        "model_id": "VEGA-DEMO-TEXT",
+        "model_id": "AEGIS-DEMO-TEXT",
         "model_sha256": "1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff",
         "sop_sha256": "aaaabbbbccccddddeeeeffff1111222233334444555566667777888899990000",
         "authoritative_sop": "Pump_SOP_Rev8.txt",

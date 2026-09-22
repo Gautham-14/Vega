@@ -1,16 +1,16 @@
 """
-Tests for Vega Hardware Detection, Simulation Profiles, and Scheduler
+Tests for Aegis Hardware Detection, Simulation Profiles, and Scheduler
 """
 import pytest
-from vega.storage.database import init_db
-from vega.models.registry import seed_model_registry
-from vega.hardware.detector import detect_hardware
-from vega.hardware.simulation import (
+from aegis.storage.database import init_db
+from aegis.models.registry import seed_model_registry
+from aegis.hardware.detector import detect_hardware
+from aegis.hardware.simulation import (
     list_hardware_profiles,
     set_active_hardware_profile_name,
     get_active_hardware_profile_name
 )
-from vega.hardware.scheduler import get_effective_hardware, evaluate_model_eligibility
+from aegis.hardware.scheduler import get_effective_hardware, evaluate_model_eligibility
 
 @pytest.fixture(autouse=True)
 def setup_env():

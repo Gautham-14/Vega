@@ -1,8 +1,8 @@
 """
-Tests for Vega Claim-Level Evidence Gate
+Tests for Aegis Claim-Level Evidence Gate
 """
 import pytest
-from vega.runtime.evidence_gate import EvidenceGate, Claim, ClaimState
+from aegis.runtime.evidence_gate import EvidenceGate, Claim, ClaimState
 
 def test_evidence_gate_classification():
     gate = EvidenceGate()

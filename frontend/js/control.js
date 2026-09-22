@@ -64,7 +64,7 @@ const Control = {
   actor() { return document.getElementById('control-persona').value; },
   request(path, body) {
     return App.request(`/api/control${path}`, {method: body === undefined ? 'GET' : 'POST',
-      headers: {'Content-Type':'application/json', 'X-Vega-Actor': this.actor()},
+      headers: {'Content-Type':'application/json', 'X-Aegis-Actor': this.actor()},
       ...(body === undefined ? {} : {body: JSON.stringify(body)})});
   },
   async perform(button, action) {
@@ -72,7 +72,7 @@ const Control = {
     this.busy = true;
     const content = button.innerHTML;
     for (const control of document.querySelectorAll('#page-control button:not([data-control-tab]),#control-persona')) control.disabled = true;
-    button.textContent = 'Working…';
+    button.textContent = 'Workingâ€¦';
     try { await action(); }
     catch (error) { App.notify(error.message, true); }
     finally {
@@ -93,7 +93,7 @@ const Control = {
       document.getElementById('control-disabled').hidden = enabled;
       document.getElementById('control-enabled').hidden = !enabled;
       if (!enabled) {
-        document.getElementById('control-disabled-copy').textContent = App.hostedPreview ? 'This hosted preview is read-only. Run Vega locally with demo mode to use approvals and protected tasks.' : 'Run Vega with demo mode enabled to prepare and approve a synthetic task.';
+        document.getElementById('control-disabled-copy').textContent = App.hostedPreview ? 'This hosted preview is read-only. Run Aegis locally with demo mode to use approvals and protected tasks.' : 'Run Aegis with demo mode enabled to prepare and approve a synthetic task.';
         return;
       }
       const state = await this.request('/state');
@@ -105,20 +105,20 @@ const Control = {
       const packageRecord = packages.find(p => p.id === demo?.package_id);
       const capsule = capsules.find(c => c.id === demo?.capsule_id);
       const lease = leases.find(l => l.id === demo?.lease_id);
-      const leaseStatus = lease ? (lease.expires_at * 1000 > Date.now() ? `Active until ${new Date(lease.expires_at * 1000).toLocaleTimeString()}` : 'Expired — renew as Data Owner') : 'Not issued';
+      const leaseStatus = lease ? (lease.expires_at * 1000 > Date.now() ? `Active until ${new Date(lease.expires_at * 1000).toLocaleTimeString()}` : 'Expired â€” renew as Data Owner') : 'Not issued';
       document.getElementById('control-prepare').disabled = this.actor() !== 'operator';
       document.getElementById('control-activate').disabled = this.actor() !== 'model-custodian' || !demo || !demo.approval_ids.every(id => approvals.some(a=>a.id === id && a.status === 'APPROVED'));
       document.getElementById('control-lease').disabled = this.actor() !== 'data-owner' || capsule?.status !== 'APPROVED';
       for (const button of document.querySelectorAll('[data-scenario]')) button.disabled = this.actor() !== 'operator' || !demo || ((!lease || lease.expires_at * 1000 <= Date.now() || capsule?.status !== 'APPROVED' || packageRecord?.status !== 'APPROVED') && ['success','wrong-purpose','tripwire'].includes(button.dataset.scenario));
-      document.getElementById('control-readiness').textContent = demo ? `Package: ${packageRecord?.status} · Capsule: ${capsule?.status} · Lease: ${leaseStatus}` : 'No synthetic fixture prepared. Select Operator, then Prepare demo.';
+      document.getElementById('control-readiness').textContent = demo ? `Package: ${packageRecord?.status} Â· Capsule: ${capsule?.status} Â· Lease: ${leaseStatus}` : 'No synthetic fixture prepared. Select Operator, then Prepare demo.';
       const escape = App.escape;
       document.getElementById('control-approvals').innerHTML = approvals.length ? approvals.map(a => {
         const role = this.state.actors[this.actor()]?.role;
         const eligible = a.status === 'PENDING' && a.expires_at * 1000 > Date.now() && a.requester !== this.actor() && a.required_roles.includes(role) && !a.decisions.some(d => d.actor === this.actor());
-        return `<tr><td data-label="Action"><strong>${escape(App.pretty(a.action))}</strong><small>${escape(a.id.slice(0,16))}</small></td><td data-label="Status"><span class="badge ${a.status==='REJECTED' ? 'bad' : a.status==='PENDING' ? 'simulated-badge' : ''}">${escape(a.status)}</span></td><td data-label="Approvals">${escape(a.decisions.map(d=>`${d.role}: ${d.decision}`).join(' · ') || 'Awaiting two distinct roles')}</td><td data-label="Decision"><button class="button secondary small" data-approval="${escape(a.id)}" data-decision="APPROVE" ${eligible ? '' : 'disabled'}>Approve</button> <button class="button secondary small" data-approval="${escape(a.id)}" data-decision="REJECT" ${eligible ? '' : 'disabled'}>Reject</button></td></tr>`;
+        return `<tr><td data-label="Action"><strong>${escape(App.pretty(a.action))}</strong><small>${escape(a.id.slice(0,16))}</small></td><td data-label="Status"><span class="badge ${a.status==='REJECTED' ? 'bad' : a.status==='PENDING' ? 'simulated-badge' : ''}">${escape(a.status)}</span></td><td data-label="Approvals">${escape(a.decisions.map(d=>`${d.role}: ${d.decision}`).join(' Â· ') || 'Awaiting two distinct roles')}</td><td data-label="Decision"><button class="button secondary small" data-approval="${escape(a.id)}" data-decision="APPROVE" ${eligible ? '' : 'disabled'}>Approve</button> <button class="button secondary small" data-approval="${escape(a.id)}" data-decision="REJECT" ${eligible ? '' : 'disabled'}>Reject</button></td></tr>`;
       }).join('') : '<tr><td colspan="4" class="empty">No approvals requested.</td></tr>';
       this.renderChain(chain);
-      document.getElementById('control-records').innerHTML = ['capsules','packages','sources','leases','tasks','artifacts','receipts'].map(kind => `<details><summary>${escape(App.pretty(kind))} · ${this.state[kind].length}</summary><pre>${escape(JSON.stringify(this.state[kind],null,2))}</pre></details>`).join('');
+      document.getElementById('control-records').innerHTML = ['capsules','packages','sources','leases','tasks','artifacts','receipts'].map(kind => `<details><summary>${escape(App.pretty(kind))} Â· ${this.state[kind].length}</summary><pre>${escape(JSON.stringify(this.state[kind],null,2))}</pre></details>`).join('');
       this.renderGuide();
       if (this.busy) for (const button of document.querySelectorAll('#page-control button:not([data-control-tab])')) button.disabled = true;
     } catch (error) { App.notify(error.message, true); }
@@ -126,13 +126,13 @@ const Control = {
   renderChain(value) {
     const panel = document.getElementById('control-chain');
     panel.className = `result ${value.is_valid ? 'good' : 'bad'}`;
-    panel.textContent = `${value.status} · ${value.count} chained receipts. Local software trust anchor.`;
+    panel.textContent = `${value.status} Â· ${value.count} chained receipts. Local software trust anchor.`;
   },
   showResult(value) {
     const escape = App.escape;
     const exported = value.export;
     const title = value.status || exported?.decision || 'Result';
-    const summary = [value.reason, value.changed_components ? `Changed: ${value.changed_components.join(', ')}` : exported?.decision].filter(Boolean).join(' · ');
+    const summary = [value.reason, value.changed_components ? `Changed: ${value.changed_components.join(', ')}` : exported?.decision].filter(Boolean).join(' Â· ');
     document.getElementById('control-result').innerHTML = `<div class="result ${value.status === 'COMPLETED' ? 'good' : ''}"><strong>${escape(title)}</strong> ${escape(summary)}</div>${value.steps ? `<ol class="control-steps">${value.steps.map(s=>`<li><strong>${escape(App.pretty(s.step))}</strong><small>${escape(s.status || s.workspace || s.mode || s.route || '')}</small></li>`).join('')}</ol>` : ''}${exported?.text ? `<h3>Approved deliverable</h3><pre>${escape(exported.text)}</pre>` : '<p class="body-copy">No protected deliverable was released.</p>'}<details><summary>Inspect decision and receipt</summary><pre>${escape(JSON.stringify(value,null,2))}</pre></details>`;
   },
   init() {

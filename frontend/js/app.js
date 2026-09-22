@@ -50,7 +50,7 @@ const App = {
       if (active) link.setAttribute('aria-current','page'); else link.removeAttribute('aria-current');
     }
     document.getElementById('breadcrumb').textContent = this.labels[page];
-    document.title = `${this.labels[page]} · Vega`;
+    document.title = `${this.labels[page]} Â· Aegis`;
     this.closeNav();
     window.scrollTo(0,0);
     document.querySelector(`#page-${page} h1`)?.focus({preventScroll:true});
@@ -66,7 +66,7 @@ const App = {
       document.getElementById('connection-status').textContent = this.hostedPreview ? 'Hosted preview' : 'Runtime connected';
       document.getElementById('connection-dot').classList.remove('offline');
       document.getElementById('model-count').textContent = data.registered_models;
-      document.getElementById('model-note').textContent = `${data.qualified_models} qualified · ${data.quarantined_models} in quarantine`;
+      document.getElementById('model-note').textContent = `${data.qualified_models} qualified Â· ${data.quarantined_models} in quarantine`;
       document.getElementById('document-count').textContent = data.registered_documents;
       document.getElementById('receipt-count').textContent = data.recent_receipts_count;
       document.getElementById('security-status').textContent = data.recent_security_events_count;
@@ -83,7 +83,7 @@ const App = {
       document.getElementById('models-body').innerHTML = rows.length ? rows.map(m => {
         const summary = m.benchmark_summary || {};
         const issue = summary.integrity_check === 'FAIL_HASH_MISMATCH' ? 'Checksum mismatch' : summary.license_compliant === false ? 'License review required' : '';
-        return `<tr><td><strong>${this.escape(m.name)}</strong><small>${this.escape(m.id)} · ${this.escape(m.version)}</small></td><td>${this.escape((m.capabilities || []).join(', '))}</td><td>${this.escape(m.memory_req_mb)} MB · ${this.escape(m.cpu_cores_req)} cores</td><td><span class="badge">${this.escape(this.pretty(m.status))}</span>${issue ? `<small>${issue}</small>` : ''}</td></tr>`;
+        return `<tr><td><strong>${this.escape(m.name)}</strong><small>${this.escape(m.id)} Â· ${this.escape(m.version)}</small></td><td>${this.escape((m.capabilities || []).join(', '))}</td><td>${this.escape(m.memory_req_mb)} MB Â· ${this.escape(m.cpu_cores_req)} cores</td><td><span class="badge">${this.escape(this.pretty(m.status))}</span>${issue ? `<small>${issue}</small>` : ''}</td></tr>`;
       }).join('') : `<tr><td colspan="4" class="empty">${this.empty('layers', 'Your model registry starts here', 'Keep model identity, capabilities and resource requirements together. Registration saves metadata only.', this.hostedPreview ? '' : '<button class="button secondary" data-open="model-dialog">Add your first manifest</button>')}</td></tr>`;
       this.reapply('models-body');
     } catch (error) { this.showError('models-body',4,error); }
@@ -140,7 +140,7 @@ const App = {
   async scan() {
     const text = document.getElementById('scan-text').value.trim();
     if (!text) { this.notify('Enter text to inspect.',true); return; }
-    const button = document.getElementById('scan-button'); button.disabled = true; button.textContent = 'Scanning…';
+    const button = document.getElementById('scan-button'); button.disabled = true; button.textContent = 'Scanningâ€¦';
     try {
       const result = await this.request('/api/security/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
       const panel = document.getElementById('scan-result'); panel.hidden = false;
@@ -195,7 +195,7 @@ const App = {
           button.title = 'Available in the local workspace';
         }
         document.querySelector('#page-overview .page-heading p').textContent = 'Explore the interface. Private data stays in your local workspace.';
-        document.querySelector('#page-overview .hero p').textContent = 'Explore the interface and simulated telemetry. Run Vega locally to add sources and follow the governed task demonstration.';
+        document.querySelector('#page-overview .hero p').textContent = 'Explore the interface and simulated telemetry. Run Aegis locally to add sources and follow the governed task demonstration.';
       }
     } catch (_) { /* The regular connection indicator reports API failures. */ }
     document.getElementById('document-form').elements.effective_date.value = new Date().toISOString().slice(0,10);

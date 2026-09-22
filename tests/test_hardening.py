@@ -8,19 +8,19 @@ import subprocess
 import pytest
 from starlette.testclient import TestClient
 
-from vega import config
-from vega.api.server import app
-from vega.hardware.simulation import set_active_hardware_profile_name
-from vega.knowledge.demo_data import seed_knowledge_registry
-from vega.knowledge.registry import (add_document, compute_file_sha256, find_authoritative_document,
+from aegis import config
+from aegis.api.server import app
+from aegis.hardware.simulation import set_active_hardware_profile_name
+from aegis.knowledge.demo_data import seed_knowledge_registry
+from aegis.knowledge.registry import (add_document, compute_file_sha256, find_authoritative_document,
                                      get_document_by_id)
-from vega.models.registry import (compute_manifest_sha256, get_model_by_id, import_model_manifest,
+from aegis.models.registry import (compute_manifest_sha256, get_model_by_id, import_model_manifest,
                                   run_simulated_qualification, seed_model_registry)
-from vega.runtime.enclave import EphemeralEnclave
-from vega.runtime.evidence_gate import Claim, EvidenceGate
-from vega.runtime.router import ModelRouter
-from vega.runtime.task_runner import TaskRunner, get_task_by_id
-from vega.storage.database import execute_write, init_db, query_all
+from aegis.runtime.enclave import EphemeralEnclave
+from aegis.runtime.evidence_gate import Claim, EvidenceGate
+from aegis.runtime.router import ModelRouter
+from aegis.runtime.task_runner import TaskRunner, get_task_by_id
+from aegis.storage.database import execute_write, init_db, query_all
 
 
 @pytest.fixture(autouse=True)
@@ -32,10 +32,10 @@ def seeded():
 
 
 def manifest(**changes):
-    data = {key: value for key, value in get_model_by_id("VEGA-DEMO-TEXT").items()
+    data = {key: value for key, value in get_model_by_id("AEGIS-DEMO-TEXT").items()
             if key in {"id", "name", "version", "architecture", "parameters", "quantization",
                        "capabilities", "license", "sha256", "memory_req_mb", "cpu_cores_req", "gpu_vram_req_mb"}}
-    data.update(id="CANDIDATE", name="Pump modèle Δ", **changes)
+    data.update(id="CANDIDATE", name="Pump modÃƒÂ¨le ÃŽâ€", **changes)
     data["sha256"] = compute_manifest_sha256(data)
     return data
 
@@ -141,7 +141,7 @@ def test_rejected_inputs_never_reach_model_and_failed_tasks_are_cleaned(monkeypa
     execute_write(f"UPDATE documents SET {column} = ? WHERE id = 'DOC-REPORT-P204-INSPECTION'", (value,))
     def unexpected(*args, **kwargs):
         pytest.fail("Model was called with rejected context")
-    monkeypatch.setattr("vega.models.mock_adapter.MockModelAdapter.generate", unexpected)
+    monkeypatch.setattr("aegis.models.mock_adapter.MockModelAdapter.generate", unexpected)
     with pytest.raises(RuntimeError, match="inspection report"):
         TaskRunner().run_pump_inspection_demo(task_id="REJECTED")
     assert get_task_by_id("REJECTED")["status"] == "FAILED"
@@ -258,7 +258,7 @@ def test_startup_lifespan_serves_ui_and_preserves_modified_records():
 def test_receipt_failure_leaves_failed_task_and_cleans_inputs(monkeypatch):
     def fail(*args):
         raise OSError("simulated receipt storage failure")
-    monkeypatch.setattr("vega.runtime.task_runner.generate_sovereignty_receipt", fail)
+    monkeypatch.setattr("aegis.runtime.task_runner.generate_sovereignty_receipt", fail)
     with pytest.raises(OSError, match="receipt storage failure"):
         TaskRunner().run_pump_inspection_demo(task_id="EXPORT-FAILURE")
     assert get_task_by_id("EXPORT-FAILURE")["status"] == "FAILED"
@@ -281,7 +281,7 @@ def test_browser_generated_manifest_hash_is_accepted_by_api():
 const fs = require('node:fs');
 const vm = require('node:vm');
 const fields = {
-  id: 'BROWSER-CANDIDATE', name: 'Pompe modèle Δ', version: 'v1',
+  id: 'BROWSER-CANDIDATE', name: 'Pompe modÃƒÂ¨le ÃŽâ€', version: 'v1',
   architecture: 'Mock', parameters: '8B', quantization: 'Q4',
   capabilities: 'text, reasoning', license: 'MIT', sha256: '',
   memory_req_mb: '8192', cpu_cores_req: '4', gpu_vram_req_mb: '0'
@@ -309,7 +309,7 @@ vm.runInContext(fs.readFileSync(process.argv[1], 'utf8') + '\n globalThis.app = 
 
 
 def test_connection_context_closes_the_database_handle():
-    from vega.storage.database import get_db_connection
+    from aegis.storage.database import get_db_connection
     with get_db_connection() as connection:
         assert connection.execute("SELECT 1").fetchone()[0] == 1
     with pytest.raises(sqlite3.ProgrammingError, match="closed"):

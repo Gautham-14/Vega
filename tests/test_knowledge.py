@@ -1,10 +1,10 @@
 """
-Tests for Vega Authority-Aware Knowledge Registry
+Tests for Aegis Authority-Aware Knowledge Registry
 """
 import pytest
-from vega.storage.database import init_db
-from vega.knowledge.demo_data import seed_knowledge_registry
-from vega.knowledge.registry import (
+from aegis.storage.database import init_db
+from aegis.knowledge.demo_data import seed_knowledge_registry
+from aegis.knowledge.registry import (
     get_all_documents,
     get_document_by_filename,
     find_authoritative_document
