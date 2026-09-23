@@ -102,11 +102,11 @@ def worker():
             "all_passed": all(r["status"] == "PASS" for r in results), "storage": "DISPOSABLE_SYNTHETIC_FIXTURES"}
 
 
-def run_self_test():
+def run_self_test(include_coding=False):
     from aegis import config
     with tempfile.TemporaryDirectory(prefix="aegis-adversarial-") as directory:
         env = {**os.environ, "AEGIS_DATA_DIR": directory}
-        process = subprocess.run([sys.executable, "-m", "aegis.control.self_test", "--worker"], cwd=config.BASE_DIR,
+        process = subprocess.run([sys.executable, "-m", "aegis.control.self_test", "--worker"] + (["--coding"] if include_coding else []), cwd=config.BASE_DIR,
                                  env=env, capture_output=True, text=True, timeout=120)
         if process.returncode:
             store.event("SELF_TEST_FAILURE")
@@ -120,4 +120,11 @@ def run_self_test():
 
 
 if __name__ == "__main__" and "--worker" in sys.argv:
-    print(json.dumps(worker()))
+    result = worker()
+    if "--coding" in sys.argv:
+        from aegis.coding.validation import checks
+        result["tests"].extend(checks())
+        result.update(tests_total=len(result["tests"]), tests_passed=sum(t["status"] == "PASS" for t in result["tests"]),
+                      all_passed=all(t["status"] == "PASS" for t in result["tests"]),
+                      not_verified=["OS sandbox containment", "OS outbound-network isolation", "Live model inference", "Hardware attestation"])
+    print(json.dumps(result))

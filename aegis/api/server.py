@@ -21,6 +21,7 @@ from aegis.api.routes.security import router as security_router
 from aegis.api.routes.tasks import router as tasks_router
 from aegis.api.routes.receipts import router as receipts_router
 from aegis.api.routes.control import router as control_router
+from aegis.api.routes.coding import router as coding_router
 from aegis.control.store import init_control, Denied
 import asyncio
 import contextlib
@@ -35,9 +36,11 @@ async def lifespan(app: FastAPI):
     init_control()
     async def retention_worker():
         from aegis.control.artifacts import sweep
+        from aegis.coding.service import sweep as sweep_coding
         while True:
             try:
                 await asyncio.to_thread(sweep)
+                await asyncio.to_thread(sweep_coding)
             except Exception:
                 logging.getLogger("aegis.retention").error("Retention sweep failed; inspect the local security ledger")
             await asyncio.sleep(30)
@@ -101,6 +104,7 @@ app.include_router(security_router)
 app.include_router(tasks_router)
 app.include_router(receipts_router)
 app.include_router(control_router)
+app.include_router(coding_router)
 
 
 @app.exception_handler(Denied)

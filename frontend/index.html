@@ -10,6 +10,7 @@
   <script src="/static/js/telemetry.js" defer></script>
   <script src="/static/js/app.js" defer></script>
   <script src="/static/js/control.js" defer></script>
+  <script src="/static/js/coding.js" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -20,6 +21,7 @@
 <div class="nav-group-label">WORKSPACE</div><a href="#overview" data-page="overview"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#grid"/></svg><span>Overview</span></a>
 <a href="#system" data-page="system"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#activity"/></svg><span>Telemetry</span></a>
 <a href="#control" data-page="control"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#shield"/></svg><span>Control plane</span></a>
+<a href="#coding" data-page="coding"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#file"/></svg><span>Coding workbench</span></a>
 <div class="nav-group-label">LIBRARY</div><a href="#models" data-page="models"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#layers"/></svg><span>Model registry</span></a>
 <a href="#knowledge" data-page="knowledge"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#folder"/></svg><span>Knowledge base</span></a>
 <div class="nav-group-label">ASSURANCE</div><a href="#security" data-page="security"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#lock"/></svg><span>Security center</span></a>
@@ -95,6 +97,32 @@
             <div class="columns"><article class="card"><div class="card-head"><div><h2>Verify the audit trail</h2><p>Ordered hashes with a local authenticated chain head.</p></div></div><div class="actions"><button class="button secondary" id="control-verify">Verify receipt chain</button><button class="button secondary" id="control-self-test">Run 17 adversarial tests</button></div><div id="control-chain" class="result" role="status"></div><div id="control-tests"></div></article><article class="card"><div class="card-head"><div><h2>Learning policy</h2><p>Current prototype settings</p></div><svg class="icon" aria-hidden="true"><use href="/static/icons.svg#lock"/></svg></div><div class="resource-row"><span>Training</span><span class="badge neutral">Disabled</span></div><div class="resource-row"><span>Automatic chat learning</span><span class="badge neutral">Disabled</span></div><div class="resource-row"><span>Persistent memory</span><span class="badge neutral">Disabled</span></div><p class="body-copy">Future training plans need approved data, a purpose and a new approved Capsule. No training runs here.</p></article></div>
             <div class="card"><div class="card-head"><div><h2>Governance records</h2><p>Expand a record group to inspect metadata. Protected source fields are excluded.</p></div></div><div id="control-records"></div></div>
           </div>
+        </div>
+      </section>
+      <section class="page" id="page-coding" aria-labelledby="coding-title" hidden>
+        <div class="page-heading"><div><span class="eyebrow">GOVERNED CODING</span><h1 id="coding-title" tabindex="-1">Coding workbench<span class="heading-dot">.</span></h1><p>Understand code, propose a change, and review what leaves.</p></div><button class="button secondary" id="coding-refresh">Refresh</button></div>
+        <div id="coding-disabled" class="notice" hidden>Start locally with <code>python run_aegis.py --demo</code> to enable this workbench.</div>
+        <div class="notice"><strong>Snapshot prototype</strong><p>Edits stay in an encrypted task snapshot. Your original checkout is unchanged. Shell, tests, Git worktrees and OS network isolation are not available. Personas below demonstrate roles; they are not sign-in.</p></div>
+        <div id="coding-workspace" hidden>
+          <div class="card coding-toolbar"><label>Active demo persona<select id="coding-persona"><option value="operator">Operator</option><option value="model-custodian">Model Custodian</option><option value="security-officer">Security Officer</option><option value="data-owner">Data Owner</option><option value="finance-operator">Finance Operator</option><option value="hr-operator">HR Operator</option></select></label><div><strong id="coding-next">Start with an approved coding stack.</strong><p id="coding-next-copy" class="body-copy"></p></div></div>
+          <details class="card coding-setup" open><summary>1. Approve a coding stack</summary><p class="body-copy">Register as Operator, approve as Model Custodian and Security Officer, then activate as Model Custodian.</p>
+            <div class="coding-inline"><label>Proposal provider<select id="coding-provider"><option value="reference">Reference fixture (no LLM)</option><option value="ollama">Local Ollama (requires configuration)</option></select></label><button class="button secondary" id="coding-register">Request Capsule approval</button></div>
+            <p class="form-help">The reference adapter demonstrates one port-validation fix. Ollama uses an explicitly configured local model and never downloads weights.</p>
+            <div id="coding-stacks"></div><div id="coding-approvals" class="coding-approvals"></div><pre id="coding-review" class="coding-code" hidden></pre>
+          </details>
+          <details class="card coding-setup" open><summary>2. Authorize repository context</summary><p class="body-copy">As Data Owner, import a small text snapshot and issue a purpose lease. Sources are encrypted at rest.</p>
+            <div class="columns">
+              <form id="coding-import" class="coding-form"><label>Snapshot name<input id="coding-repo-name" maxlength="120" value="My repository" required></label><label>Text files<input id="coding-files" type="file" multiple></label><label>Compartment<select id="coding-compartment"><option>Engineering</option><option>Maintenance</option><option>Finance</option><option>HR</option><option>Public</option></select></label><p class="form-help">Up to 64 UTF-8 files, 128 KB per file and 512 KB total. This picker imports filenames at the snapshot root.</p><div class="actions"><button class="button secondary" type="submit">Import selected files</button><button class="button subtle" type="button" id="coding-sample">Import port-validation sample</button></div></form>
+              <form id="coding-lease" class="coding-form"><label>Repository snapshot<select id="coding-repository" required></select></label><label>Approved Capsule<select id="coding-capsule" required></select></label><div class="coding-inline"><label>Mode<select id="coding-mode"><option>ASK</option><option selected>PLAN</option><option>EXECUTE</option></select></label><label>Recipient persona<select id="coding-user"><option value="operator">Operator</option><option value="finance-operator">Finance Operator</option><option value="hr-operator">HR Operator</option></select></label></div><label class="coding-check"><input type="checkbox" id="coding-export-permission">Allow patch download after two-person approval</label><button class="button primary" type="submit">Issue 15-minute lease</button></form>
+            </div>
+            <div id="coding-leases"></div>
+          </details>
+          <div class="card"><div class="card-head"><div><h2>3. Run a coding task</h2><p>ASK explains. PLAN proposes steps. EXECUTE stages edits for review.</p></div><span class="badge">NO HOST SHELL</span></div>
+            <form id="coding-run" class="coding-form"><label>Active purpose lease<select id="coding-active-lease" required></select></label><label>Task<textarea id="coding-prompt" rows="3" maxlength="8000" required>Find valid_port and fix the port-zero validation boundary.</textarea></label><div class="actions"><button class="button primary" type="submit">Run governed task</button><span class="body-copy">The reference fixture is deterministic. Python checks validate syntax only.</span></div></form>
+            <div id="coding-result" aria-live="polite" class="coding-result"><p class="body-copy">A completed task will show its proposal, tool decisions and reviewable diff here.</p></div>
+            <div id="coding-history"></div>
+          </div>
+          <div class="card"><div class="card-head"><div><h2>Adversarial validation</h2><p>Challenge the control plane and coding gates in disposable synthetic storage.</p></div></div><button class="button secondary" id="coding-validate">Run Aegis adversarial validation</button><div id="coding-validation" aria-live="polite"></div><p class="form-help">Finite application-level checks. Passing does not certify OS containment, network isolation or live model inference.</p></div>
         </div>
       </section>
     </main>

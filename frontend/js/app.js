@@ -50,11 +50,11 @@ const App = {
       if (active) link.setAttribute('aria-current','page'); else link.removeAttribute('aria-current');
     }
     document.getElementById('breadcrumb').textContent = this.labels[page];
-    document.title = `${this.labels[page]} Â· Aegis`;
+    document.title = `${this.labels[page]} · Aegis`;
     this.closeNav();
     window.scrollTo(0,0);
     document.querySelector(`#page-${page} h1`)?.focus({preventScroll:true});
-    ({overview:()=>this.loadOverview(),models:()=>this.loadModels(),knowledge:()=>this.loadDocuments(),security:()=>this.loadEvents(),receipts:()=>this.loadReceipts(),system:()=>this.loadOverview(),control:()=>Control.load()})[page]();
+    ({overview:()=>this.loadOverview(),models:()=>this.loadModels(),knowledge:()=>this.loadDocuments(),security:()=>this.loadEvents(),receipts:()=>this.loadReceipts(),system:()=>this.loadOverview(),control:()=>Control.load(),coding:()=>Coding.load()})[page]();
   },
   openNav() { document.body.classList.add('nav-open'); document.getElementById('workspace').inert = true; document.getElementById('nav-scrim').hidden = false; document.getElementById('nav-toggle').setAttribute('aria-expanded','true'); document.querySelector('[data-page].active')?.focus(); },
   closeNav() { document.body.classList.remove('nav-open'); document.getElementById('workspace').inert = false; document.getElementById('nav-scrim').hidden = true; document.getElementById('nav-toggle').setAttribute('aria-expanded','false'); },
@@ -184,6 +184,7 @@ const App = {
     Telemetry.init();
     try {
       const health = await this.request('/health');
+      document.getElementById('connection-status').textContent = 'Runtime connected';
       if (health.deployment_mode === 'HOSTED_PREVIEW') {
         this.hostedPreview = true;
         document.getElementById('hosted-preview-notice').hidden = false;

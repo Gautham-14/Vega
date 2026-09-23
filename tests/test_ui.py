@@ -50,3 +50,35 @@ assert.equal(guide(state).tab, 'setup');
 '''
     source = Path(__file__).resolve().parents[1] / "frontend/js/control.js"
     subprocess.run([node, "-e", script, str(source)], check=True, capture_output=True, text=True, timeout=15)
+
+
+def test_coding_expiry_does_not_disrupt_review_and_clears_expired_content():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node is optional for frontend checks")
+    script = r'''
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const context = vm.createContext({App:{labels:{}},document:{addEventListener(){}}});
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8') + '\n globalThis.coding = Coding;', context);
+const coding = context.coding;
+let renders = 0;
+const review = {textContent:'sensitive diff',hidden:false};
+coding.state = {};
+coding.nextExpiry = 1200;
+coding.reviewExpires = 1100;
+coding.el = id => {assert.equal(id,'review');return review;};
+coding.render = () => {renders++;};
+coding.tick(1050);
+assert.equal(renders,0);
+assert.equal(review.textContent,'sensitive diff');
+coding.tick(1100);
+assert.equal(review.textContent,'');
+assert.equal(review.hidden,true);
+assert.equal(renders,0);
+coding.tick(1200);
+assert.equal(renders,1);
+'''
+    source = Path(__file__).resolve().parents[1] / "frontend/js/coding.js"
+    subprocess.run([node, "-e", script, str(source)], check=True, capture_output=True, text=True, timeout=15)

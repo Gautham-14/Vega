@@ -19,7 +19,15 @@ Synthetic task, self-test, qualification, comparison, and simulated hardware act
 
 The **Quick guide** links to the main workflows. Control plane separates **Setup & approvals**, **Run a task**, and **Audit & records**, with a next-step guide based on current approvals and lease expiry. Its shortcut switches the demo persona and focuses the relevant action; approvals and task execution still require explicit clicks. Arrow keys navigate the workflow tabs. On small screens, navigation opens as a drawer and approval requests stack vertically.
 
-See [IMPLEMENTATION.md](IMPLEMENTATION.md) for the walkthrough, API usage, requirements-to-code map and precise simulation boundaries. The protected control-plane source store is encrypted and separate from the original metadata registries. The prototype uses selectable local personas to demonstrate separation of duties; it does not provide production authentication, real model inference, hardware attestation or operating-system network isolation.
+See [IMPLEMENTATION.md](IMPLEMENTATION.md) for the walkthrough, API usage, requirements-to-code map and precise simulation boundaries. The protected control-plane source store is encrypted and separate from the original metadata registries. The prototype uses selectable local personas to demonstrate separation of duties. Its default adapters are deterministic; optional local inference requires separate setup. Production authentication, hardware attestation and operating-system network isolation are not provided.
+
+## Governed coding workbench
+
+Run with `--demo` and open **Coding workbench**. Import text repository snapshots, approve a coding Capsule with two personas, issue a purpose-bound ASK/PLAN/EXECUTE lease, and review proposed edits. Changes remain in an encrypted task snapshot; downloading a patch requires explicit lease permission and two-person approval. Shell execution, Git worktrees and test execution remain blocked pending an OS sandbox.
+
+The reference provider demonstrates a deterministic port-validation repair without a model. An optional loopback-only Ollama adapter supports an explicitly configured installed model with a pinned manifest digest; it never downloads models or falls back to a cloud provider. Live inference requires local setup and is not covered by the deterministic demonstration. See [the setup and trust boundaries](IMPLEMENTATION.md#optional-local-ollama).
+
+**Run Aegis adversarial validation** checks 32 finite control-plane and coding cases in disposable storage. Its results distinguish application-policy checks from unverified OS isolation and live inference.
 
 ## Simulated telemetry
 
