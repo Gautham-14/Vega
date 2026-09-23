@@ -162,6 +162,12 @@ const Control = {
         document.getElementById('control-tests').innerHTML = `<h3>${result.tests_passed} / ${result.tests_total} passed</h3><ul>${result.tests.map(t=>`<li><strong>${App.escape(t.status)}</strong> ${App.escape(t.name)}</li>`).join('')}</ul>`;
       });
     });
+    // Auto-poll state for CLI operations
+    setInterval(() => {
+        if (!this.busy && document.getElementById('page-control') && !document.getElementById('page-control').hidden) {
+            this.load();
+        }
+    }, 5000);
   }
 };
 document.addEventListener('DOMContentLoaded',()=>Control.init());

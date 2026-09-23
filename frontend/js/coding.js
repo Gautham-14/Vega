@@ -48,10 +48,7 @@ const Coding = {
     }).join('') || '<p class="body-copy">No coding approvals yet.</p>';
     this.el('leases').innerHTML = s.leases.map(l=>`<div class="coding-record"><strong>${e(l.mode)} · ${e(l.user)}</strong><p>${e(l.purpose)} · ${l.revoked ? 'Revoked' : l.expires_at<=now ? 'Expired' : `Expires ${e(new Date(l.expires_at*1000).toLocaleTimeString())}`}</p>${role==='Data Owner' && !l.revoked ? `<button class="button subtle" data-coding-revoke="${e(l.id)}">Revoke lease and remove its task content</button>` : ''}</div>`).join('');
     this.el('history').innerHTML = s.tasks.length ? `<details class="coding-record"><summary>Task history (${s.tasks.length})</summary>${s.tasks.map(t=>`<button class="button subtle" data-coding-task="${e(t.id)}">${e(t.status)} · ${e(t.id.slice(-10))}</button>`).join('')}</details>` : '';
-    this.el('register').disabled = this.busy || role!=='Operator';
-    for (const control of this.el('import').querySelectorAll('button,input,select')) control.disabled = this.busy || role!=='Data Owner';
-    for (const control of this.el('lease').querySelectorAll('button,input,select')) control.disabled = this.busy || role!=='Data Owner';
-    this.el('run').querySelector('button').disabled = this.busy || !this.el('active-lease').value;
+    // Removed form disable logic since forms were migrated to CLI
     if (this.task) this.renderTask(this.task);
     for (const summary of this.el('workspace').querySelectorAll('details > summary')) {
       if (expanded.has(summary.textContent)) summary.parentElement.open = true;
@@ -111,9 +108,12 @@ const Coding = {
   init() {
     this.el('persona').addEventListener('change',()=>{this.task=null; this.el('result').replaceChildren(); this.el('review').hidden=true; this.el('review').textContent=''; this.reviewExpires=0; this.load();});
     this.el('refresh').addEventListener('click',()=>this.load());
-    this.el('import').addEventListener('submit',event=>{event.preventDefault();this.perform(()=>this.importFiles());});
-    this.el('lease').addEventListener('submit',event=>{event.preventDefault();this.perform(()=>this.request('/leases',{repository_id:this.el('repository').value,capsule_id:this.el('capsule').value,user:this.el('user').value,mode:this.el('mode').value,minutes:15,allow_export:this.el('export-permission').checked}));});
-    this.el('run').addEventListener('submit',event=>{event.preventDefault();const lease=this.state.leases.find(l=>l.id===this.el('active-lease').value);if(lease)this.perform(async()=>{this.task=await this.request('/tasks',{lease_id:lease.id,purpose:lease.purpose,prompt:this.el('prompt').value});});});
+    // CLI Auto-polling
+    setInterval(() => {
+        if (!this.busy && document.getElementById('page-coding') && !document.getElementById('page-coding').hidden) {
+            this.load();
+        }
+    }, 5000);
     this.el('workspace').addEventListener('click',event=>{
       const b=event.target.closest('button'); if(!b || b.disabled)return;
       if(b.id==='coding-register')this.perform(()=>this.request('/capsules',{provider:this.el('provider').value}));

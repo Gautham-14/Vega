@@ -22,9 +22,17 @@ def main():
     if args.demo:
         os.environ["AEGIS_ENABLE_DEMO_ENDPOINTS"] = "1"
 
+    logo = r"""
+    ___    ____________ ________ 
+   /   |  / ____/ ____//  _/ ___/
+  / /| | / __/ / / __  / / \__ \ 
+ / ___ |/ /___/ /_/ /_/ / ___/ / 
+/_/  |_/_____/\____//___//____/  
+                                 
+ SOVEREIGN INDUSTRIAL AI RUNTIME
+"""
     print("=" * 72)
-    print(" AEGIS - SOVEREIGN INDUSTRIAL AI RUNTIME")
-    print(" Local operations workspace")
+    print(logo)
     print("=" * 72)
     print(" Local runtime ready. Storage initializes on startup.")
     print(f" Web Operations Console: http://{args.host}:{args.port}")
