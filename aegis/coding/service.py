@@ -1,7 +1,7 @@
-"""Coding trust cycle using the existing local software trust root and personas.
+"""Coding trust cycle using local accounts and a local software trust root.
 
 Snapshots and retained proposals are encrypted; no tool touches the host checkout.
-OS containment, real authentication and model-server isolation remain deployment work.
+Optional sandbox/model-server isolation requires deployment validation.
 """
 import hashlib
 import hmac
@@ -12,13 +12,14 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 from aegis.control import capsules, data, policy, store
 from aegis.control.runtime import POLICY_STATE
-from aegis.coding import providers, tools
+from aegis.coding import providers, tools, sandbox, retrieval, git_workspace
 
 PURPOSES = {"ASK": "code-understanding", "PLAN": "code-planning", "EXECUTE": "secure-code-remediation"}
 DEMO_FILES = {"validation.py": "def valid_port(port):\n    return 0 <= port <= 65535\n",
               "test_validation.py": "from validation import valid_port\n\ndef test_port_boundaries():\n    assert not valid_port(0)\n    assert valid_port(1)\n    assert valid_port(65535)\n    assert not valid_port(65536)\n"}
 IMPLEMENTATION_PATHS = [Path(__file__), Path(providers.__file__), Path(tools.__file__), Path(capsules.__file__),
-                        Path(data.__file__), Path(policy.__file__), Path(store.__file__)]
+                        Path(data.__file__), Path(policy.__file__), Path(store.__file__), Path(sandbox.__file__),
+                        Path(retrieval.__file__), Path(git_workspace.__file__)]
 LOADED_IMPLEMENTATION = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in IMPLEMENTATION_PATHS}
 
 
@@ -48,9 +49,10 @@ def components(spec):
         raise store.Denied("RUNTIME_RESTART_REQUIRED", "Coding implementation changed on disk; restart before measuring or running a Capsule")
     return {"model": spec, "tokenizer": "bundled-in-model-manifest", "quantization": "bundled-in-model-manifest",
             "system_prompt_hash": store.digest(providers.SYSTEM), "adapter": spec["provider"],
-            "runtime": {"implementation": implementation, "proposal_schema": tools.Proposal.model_json_schema()},
+            "runtime": {"implementation": implementation, "proposal_schema": tools.Proposal.model_json_schema(),
+                        "sandbox": sandbox.configuration(), "git": git_workspace.configuration()},
             "skill_policy": {"id": "coding-v1", "tools": tools.TOOLS, "modes": tools.MODES, "purposes": PURPOSES},
-            "retrieval": {"provider": "literal-plus-python-ast-v1", "semantic": False},
+            "retrieval": retrieval.configuration(),
             "security_policy_version": policy.POLICY_VERSION}
 
 
@@ -161,7 +163,7 @@ def sweep():
                 destroy(task, "EXPIRED")
 
 
-def run(lease_id, prompt, purpose, identity):
+def run(lease_id, prompt, purpose, identity, parent_task_id=None):
     task = {"id": store.uid("CODE-TASK"), "lease_id": lease_id, "user": identity, "created_at": time.time(),
             "status": "RUNNING", "trace": [], "external_model_calls": 0, "local_model_calls": 0,
             "tests": "NOT_RUN_NO_OS_SANDBOX", "host_checkout_modified": False}
@@ -178,6 +180,12 @@ def run(lease_id, prompt, purpose, identity):
         files = json.loads(Fernet(store.encryption_key("coding-repository:" + compartments[0])).decrypt(repository["ciphertext"].encode()))
         if store.digest(files) != repository["content_hash"]:
             raise store.Denied("CODING_INTEGRITY_FAILURE", "Snapshot content hash differs")
+        if parent_task_id:
+            parent = owned_task(parent_task_id, identity)
+            if parent["lease_id"] != lease_id or parent["status"] != "APPLIED":
+                raise store.Denied("SESSION_MISMATCH", "Continue only an applied task under the same live lease")
+            files = dict(task_payload(parent, identity)["files"])
+            task["parent_task_id"] = parent_task_id
         withheld = []
         for path in list(files):
             try:
@@ -197,7 +205,7 @@ def run(lease_id, prompt, purpose, identity):
             validate_lease(lease_id, identity, purpose)
             if sum(len(m["content"]) for m in messages) > 48000:
                 raise store.Denied("CONTEXT_BUDGET_EXCEEDED", "Context budget reached; narrow the snapshot")
-            if spec["provider"] == "ollama":
+            if spec["provider"] != "reference":
                 task["local_model_calls"] += 1
             proposal = providers.propose(spec, messages, lease["mode"], turn)
             tools.inspect_text(proposal.message, compartments)
@@ -217,6 +225,15 @@ def run(lease_id, prompt, purpose, identity):
                 result = tools.dispatch(action, files, original, lease["mode"], compartments)
                 tools.inspect_text(store.canonical(result), compartments)
                 trace["decision"] = "ALLOW"
+                if action.tool in {"repository.edit", "repository.create", "repository.delete"} and task.get("tested_snapshot_hash") != store.digest(files):
+                    if task.get("tested_snapshot_hash"):
+                        task["tests"] = "STALE_CODE_CHANGED_AFTER_TEST"
+                        task.pop("tested_snapshot_hash", None)
+                if action.tool.startswith("sandbox."):
+                    task["tests"] = result["status"] if action.tool == "sandbox.test" else task["tests"]
+                    if action.tool == "sandbox.test":
+                        task["tested_snapshot_hash"] = store.digest(files)
+                    trace["result"] = {k: result[k] for k in ("status", "exit_code", "runtime", "image")}
                 results.append({"tool": action.tool, "result": result, "trust": "UNTRUSTED_CONTENT"})
             messages.append({"role": "user", "content": store.canonical(results)})
         else:
@@ -242,7 +259,8 @@ def run(lease_id, prompt, purpose, identity):
     finally:
         task["hygiene"] = {"task_key": task_key.destroy() if task_key else "NOT_RELEASED",
                            "workspace": "IN_MEMORY_ONLY_NO_HOST_FILES", "physical_zeroization": "NOT_CLAIMED",
-                           "model_cache": "UNLOAD_REQUESTED_NOT_VERIFIED" if task.get("provider") == "ollama" else "NOT_USED"}
+                           "model_cache": "UNLOAD_REQUESTED_NOT_VERIFIED" if task.get("provider") == "ollama" else
+                           "NOT_USED" if task.get("provider") == "reference" else "SERVER_RETENTION_NOT_VERIFIED"}
         files.clear()
         original.clear()
         messages.clear()
@@ -304,6 +322,20 @@ def apply(task_id, diff_hash, identity):
         payload = task_payload(task, identity)
         if task["mode"] != "EXECUTE" or task["status"] != "AWAITING_REVIEW" or task["diff_hash"] != diff_hash:
             raise store.Denied("REVIEW_MISMATCH", "Review must match the current pending EXECUTE diff")
+        git_config = git_workspace.configuration()
+        if git_config["requested"]:
+            if not git_config["enabled"]:
+                raise store.Denied("GIT_UNAVAILABLE", "Configured Git checkpoints require an installed Git executable")
+            try:
+                with git_workspace.Workspace(payload["original"]) as workspace:
+                    reviewed = workspace.stage(payload["files"])
+                    checkpoint = workspace.checkpoint()
+                    git_result = {**checkpoint, "git_diff_hash": reviewed["diff_hash"], "worktree": "DESTROYED"}
+            except (git_workspace.WorkspaceError, OSError):
+                raise store.Denied("GIT_CHECKPOINT_FAILED", "Isolated checkpoint or its cleanup failed; apply withheld") from None
+            # Git may be slow: recheck lease and Capsule before releasing apply.
+            validate_lease(task["lease_id"], identity, task["purpose"])
+            task["git_checkpoint"] = git_result
         # The applied branch is an encrypted task snapshot; no host checkout mutation.
         task["status"] = "APPLIED"
         task["applied_snapshot_hash"] = store.digest(payload["files"])
@@ -317,6 +349,25 @@ def close(task_id, identity):
         task = owned_task(task_id, identity)
         destroy(task)
         return public(task)
+
+
+def revert(task_id, diff_hash, identity):
+    """Undo an applied encrypted checkpoint; never mutate the imported baseline."""
+    with store.LOCK:
+        task = owned_task(task_id, identity)
+        payload = task_payload(task, identity)
+        if task["status"] != "APPLIED" or task["diff_hash"] != diff_hash:
+            raise store.Denied("REVIEW_MISMATCH", "Revert must match an applied checkpoint diff")
+        payload["files"] = dict(payload["original"])
+        payload["diff"] = ""
+        task.update(status="REVERTED", diff_hash=store.digest(""), applied_snapshot_hash=store.digest(payload["files"]))
+        task["tests"] = "NOT_RUN_AFTER_REVERT"
+        task.pop("tested_snapshot_hash", None)
+        task.pop("git_checkpoint", None)
+        retain(task, payload)
+        store.receipt("CODING_CHECKPOINT_REVERTED", identity, task_id=task_id, previous_diff_hash=diff_hash,
+                      host_checkout_modified=False)
+        return view(task_id, identity)
 
 
 def export(task_id, identity, approval_id=None, request=False):
@@ -368,6 +419,9 @@ def state(identity):
     bindings = {store.digest({"capsule_id": c["id"]}): c["id"] for c in stacks}
     exports = {r["id"]: r for r in store.all_objects("coding-export-request")}
     approvals = [{**a, "capsule_id": bindings.get(a["binding"]), "task_id": exports.get(a["id"], {}).get("task_id")}
-                 for a in store.all_objects("approval") if a["binding"] in bindings or a["id"] in exports]
+                 for a in store.all_objects("approval") if (a["binding"] in bindings or a["id"] in exports)
+                 and (a["requester"] == identity or principal["role"] in a["required_roles"] or principal["role"] == "Auditor")]
+    if principal["role"] not in {"Model Custodian", "Security Officer"}:
+        stacks = [{k: v for k, v in c.items() if k in {"id", "status", "approval_id"}} for c in stacks]
     return {"repositories": repositories, "leases": leases, "tasks": tasks, "capsules": stacks,
             "approvals": approvals, "actors": policy.ACTORS, "chain": store.verify_chain()}

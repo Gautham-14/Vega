@@ -249,7 +249,7 @@ def test_opt_in_empty_start_and_api_role_checks(monkeypatch):
     monkeypatch.delenv("AEGIS_ENABLE_DEMO_ENDPOINTS", raising=False)
     with TestClient(app) as client:
         assert client.get("/api/control/status").json()["enabled"] is False
-        assert client.get("/api/control/state").status_code == 404
+        assert client.get("/api/control/state").status_code == 401
         assert store.all_objects("capsule") == []
     monkeypatch.setenv("AEGIS_ENABLE_DEMO_ENDPOINTS", "1")
     with TestClient(app) as client:

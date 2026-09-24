@@ -1,4 +1,4 @@
-"""The same canonical manifest bytes are hashed by Python and the browser."""
+"""Canonical model metadata checksum shared by the CLI and backend."""
 import hashlib
 import json
 

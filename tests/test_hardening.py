@@ -273,37 +273,19 @@ def test_receipt_for_incomplete_task_is_not_valid():
     assert verification["status"] == "TASK_NOT_COMPLETED"
 
 
-def test_browser_generated_manifest_hash_is_accepted_by_api():
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("Node is optional; required only for browser JavaScript integration")
-    script = r'''
-const fs = require('node:fs');
-const vm = require('node:vm');
-const fields = {
-  id: 'BROWSER-CANDIDATE', name: 'Pompe modÃƒÂ¨le ÃŽâ€', version: 'v1',
-  architecture: 'Mock', parameters: '8B', quantization: 'Q4',
-  capabilities: 'text, reasoning', license: 'MIT', sha256: '',
-  memory_req_mb: '8192', cpu_cores_req: '4', gpu_vram_req_mb: '0'
-};
-const form = {elements: {sha256: {value: ''}}};
-class TestFormData {
-  entries() { return Object.entries({...fields, sha256: form.elements.sha256.value})[Symbol.iterator](); }
-}
-const context = vm.createContext({
-  document: {addEventListener() {}, getElementById: () => form},
-  crypto: require('node:crypto').webcrypto, TextEncoder, FormData: TestFormData, console
-});
-vm.runInContext(fs.readFileSync(process.argv[1], 'utf8') + '\n globalThis.app = App;', context);
-(async () => {
-  const app = context.app;
-  await app.hashManifest();
-  console.log(JSON.stringify(app.manifest(form)));
-})().catch(error => { console.error(error); process.exitCode = 1; });
-'''
-    result = subprocess.run([node, "-e", script, str(config.FRONTEND_DIR / "js" / "app.js")],
-                            capture_output=True, text=True, encoding="utf-8", check=True, timeout=15)
-    response = TestClient(app).post("/api/models/import", json=json.loads(result.stdout))
+def test_cli_generated_manifest_hash_is_accepted_by_api(tmp_path):
+    import aegis_cli
+    manifest = {
+        "id": "CLI-CANDIDATE", "name": "Pompe modèle Δ", "version": "v1",
+        "architecture": "Mock", "parameters": "8B", "quantization": "Q4",
+        "capabilities": ["text", "reasoning"], "license": "MIT",
+        "memory_req_mb": 8192, "cpu_cores_req": 4, "gpu_vram_req_mb": 0,
+    }
+    source = tmp_path / "manifest.json"
+    source.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    args = aegis_cli.build_parser().parse_args(["manifest-hash", str(source)])
+    payload = aegis_cli.execute(args, None)
+    response = TestClient(app).post("/api/models/import", json=payload)
     assert response.status_code == 200
     assert response.json()["integrity_verified"] is True
 

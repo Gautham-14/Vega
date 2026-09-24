@@ -35,8 +35,10 @@ def main():
     print(logo)
     print("=" * 72)
     print(" Local runtime ready. Storage initializes on startup.")
-    print(f" Web Operations Console: http://{args.host}:{args.port}")
+    print(f" Telemetry and audit dashboard: http://{args.host}:{args.port}")
     print(f" REST API Specification: http://{args.host}:{args.port}/docs")
+    print(" Operate with: python aegis_cli.py")
+    print(" First setup: python aegis_cli.py users set <actor>")
     print(" No demo records are loaded automatically.")
     print("=" * 72)
 

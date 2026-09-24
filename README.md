@@ -1,53 +1,58 @@
 # Aegis
 
-Aegis is a local FastAPI workspace with a sovereign AI control-plane prototype: approved stack identities, signed purpose leases, encrypted assets, selective disclosure, compartment isolation, two-person approval, controlled export, memory hygiene and chained receipts. The interface starts empty; synthetic fixtures are loaded only by an explicit demo action.
+Aegis is a local governed coding prototype. **Operate from aegis-cli; use the website for measured telemetry and audit status.** Accounts, provider profiles, approved Capsules, purpose-bound leases, compartment checks, reviewed patches and receipt chains share one local backend.
 
-## Run locally
+## Start
 
-Requires Python 3.11 or newer.
+Python 3.11+ is required. From this checkout:
 
-```bash
+```powershell
 python -m pip install -r requirements.txt
+python aegis_cli.py users set operator
+python aegis_cli.py users set model-custodian
+python aegis_cli.py users set security-officer
+python aegis_cli.py users set data-owner
 python run_aegis.py
 ```
 
-Open `http://127.0.0.1:8000`. The server binds to localhost by default. Set `AEGIS_DATA_DIR` to choose where SQLite records and generated files live; otherwise Aegis uses `data/` beside the source code. That directory is ignored by Git.
+Each `users set` prompts for a password. Provisioning is a local administrator action; it also resets that account's password and revokes existing sessions. Assign separate credentials to the actual reviewers. There are no default passwords. Use the same `AEGIS_DATA_DIR` for provisioning and the server; the default is this checkout's ignored `data/` directory.
 
-The **Model registry** stores metadata, resource requirements, and a SHA-256 checksum of the manifest fields. It does not install or validate model weights. Newly registered manifests remain in quarantine. The **Knowledge base** accepts your own text and metadata, including revision, department, classification, and approval status. The **Security center** scans submitted text with local rules. It is a finite heuristic check, not a complete defense against malicious instructions.
+In another terminal:
 
-Synthetic task, self-test, qualification, comparison, and simulated hardware actions are disabled by default. Run `python run_aegis.py --demo` (or set `AEGIS_ENABLE_DEMO_ENDPOINTS=1`) and open **Control plane** to prepare and approve the synthetic workflow. This does not seed records automatically. The page demonstrates Capsule changes, attestation before decryption, purpose-bound denial, a cross-compartment privacy tripwire, cache isolation, cleanup and receipt-chain verification.
-
-The **Quick guide** links to the main workflows. Control plane separates **Setup & approvals**, **Run a task**, and **Audit & records**, with a next-step guide based on current approvals and lease expiry. Its shortcut switches the demo persona and focuses the relevant action; approvals and task execution still require explicit clicks. Arrow keys navigate the workflow tabs. On small screens, navigation opens as a drawer and approval requests stack vertically.
-
-See [IMPLEMENTATION.md](IMPLEMENTATION.md) for the walkthrough, API usage, requirements-to-code map and precise simulation boundaries. The protected control-plane source store is encrypted and separate from the original metadata registries. The prototype uses selectable local personas to demonstrate separation of duties. Its default adapters are deterministic; optional local inference requires separate setup. Production authentication, hardware attestation and operating-system network isolation are not provided.
-
-## Governed coding workbench
-
-Run with `--demo` and open **Coding workbench**. Import text repository snapshots, approve a coding Capsule with two personas, issue a purpose-bound ASK/PLAN/EXECUTE lease, and review proposed edits. Changes remain in an encrypted task snapshot; downloading a patch requires explicit lease permission and two-person approval. Shell execution, Git worktrees and test execution remain blocked pending an OS sandbox.
-
-The reference provider demonstrates a deterministic port-validation repair without a model. An optional loopback-only Ollama adapter supports an explicitly configured installed model with a pinned manifest digest; it never downloads models or falls back to a cloud provider. Live inference requires local setup and is not covered by the deterministic demonstration. See [the setup and trust boundaries](IMPLEMENTATION.md#optional-local-ollama).
-
-**Run Aegis adversarial validation** checks 32 finite control-plane and coding cases in disposable storage. Its results distinguish application-policy checks from unverified OS isolation and live inference.
-
-## Simulated telemetry
-
-The Overview resource card and **Telemetry** page show clearly labeled, browser-generated CPU, memory, GPU/VRAM and disk activity. Choose Idle workspace, Inspection review or Busy queue; pause/resume the feed or reset its two-minute sample history. Samples update every three seconds while the tab is visible. Reduced-motion preferences start the feed paused. No models, downloads or extra dependencies are needed. This display is separate from actual hardware eligibility checks and workspace/audit records, and also works in the read-only hosted preview.
-
-## Test
-
-```bash
-python -m pip install -r requirements-dev.txt
-python -m pytest -q
+```powershell
+python aegis_cli.py
 ```
 
-The tests create private temporary storage and explicitly load synthetic fixtures. They do not populate the normal application database.
+Then `/login operator` and `/help`. One-shot commands also work, such as `python aegis_cli.py login operator`. The repository's Node entrypoint runs the same native operator:
 
-## Repository layout
+```powershell
+cd gemini-cli
+npm start
+```
 
-- `aegis/` Ã¢â‚¬â€ API, registries, context rules, runtime and receipt code.
-- `frontend/` Ã¢â‚¬â€ local HTML, CSS, JavaScript, and favicon.
-- `tests/` Ã¢â‚¬â€ isolated regression tests and synthetic fixtures.
-- `run_aegis.py` Ã¢â‚¬â€ local launcher.
-## Vercel hosted preview
+No npm install or Gemini build is needed for this launcher. `AEGIS_PYTHON` selects a Python executable. The old upstream Gemini application remains reference code under `start:legacy`; the supported Aegis entrypoint does not launch it or request a Google login.
 
-Vercel detects the FastAPI entrypoint in `pyproject.toml`. On Vercel, Aegis uses temporary function storage and disables all mutating API requests. The hosted site is a read-only interface preview: it cannot persist model manifests, documents, scans, or receipts. Run Aegis locally for the working private workspace. Do not upload private data to the hosted preview.
+Open [the local dashboard](http://127.0.0.1:8000) and sign in to view measured CPU, RAM, disk and process memory, your task statuses, approvals and receipt summaries. GPU measurements are marked unavailable. The browser has no task/provider/approval mutation controls. Audit accounts can inspect request metadata; prompts, source code, bodies and tokens do not enter telemetry.
+
+## Providers and operations
+
+`/providers`, `/provider-add profile.json` and `/provider-probe PROVIDER-ID` support explicitly configured local Ollama, llama.cpp, LM Studio and vLLM servers. Connections use numeric loopback addresses, bounded responses and no redirects, proxies, automatic downloads or cloud fallback. A reference adapter is available for the finite port-validation fixture; it is not a general coding model.
+
+The complete workflow is documented in [IMPLEMENTATION.md](IMPLEMENTATION.md): import a bounded source snapshot, register and approve a Capsule, issue/select a lease, run ASK/PLAN/EXECUTE, review/apply a diff, collect export approvals and save a patch. `/endpoints` lists the API; `/api` operates additional industrial control, registry and policy endpoints.
+
+Optional capabilities include isolated temporary Git worktrees, installed Tree-sitter grammars, pinned local embeddings, and a Linux/gVisor fixed test/lint/type-check runner. They require explicit local setup. These adapters are not proof of OS isolation or model quality; see the implementation and validation limits before enabling them.
+
+## Explicit demonstration mode
+
+`python run_aegis.py --demo` enables synthetic fixture commands without automatically loading records. Before accounts exist, `/persona operator` selects a clearly labeled demo identity. Creating the first account disables identity headers even if `--demo` remains enabled. Synthetic data stays separate from real host measurements.
+
+## Verify
+
+```powershell
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+node --check frontend/js/app.js
+node --check frontend/js/telemetry.js
+```
+
+Tests use isolated temporary storage. A hosted Vercel preview remains read-only and does not represent a working persistent deployment.

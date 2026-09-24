@@ -2,6 +2,7 @@
 import ast
 import difflib
 import re
+import json
 
 from pydantic import BaseModel, ConfigDict, Field
 from aegis.control import data, store
@@ -12,8 +13,13 @@ TOOLS = {
     "repository.read": {"path": "relative path"},
     "repository.search": {"query": "literal text or Python symbol"},
     "repository.edit": {"path": "existing relative path", "before": "unique exact text", "after": "replacement"},
+    "repository.create": {"path": "new relative path", "content": "UTF-8 text"},
+    "repository.delete": {"path": "existing relative path"},
     "repository.diff": {},
     "python.syntax": {},
+    "sandbox.test": {},
+    "sandbox.lint": {},
+    "sandbox.typecheck": {},
 }
 MODES = {"ASK": ["repository.read", "repository.search"],
          "PLAN": ["repository.read", "repository.search"], "EXECUTE": list(TOOLS)}
@@ -72,35 +78,31 @@ def validate_files(files):
 
 
 def search(files, query):
-    """Exact + Python AST ranking over an already authorized, sanitized snapshot."""
-    terms = set(re.findall(r"[\w.-]+", query.lower()))
-    matches = []
-    for path, content in files.items():
-        symbols = []
-        if path.endswith(".py"):
-            try:
-                symbols = [{"name": n.name, "line": n.lineno, "kind": type(n).__name__}
-                           for n in ast.walk(ast.parse(content))
-                           if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
-            except (SyntaxError, ValueError, RecursionError):
-                pass
-        exact = [i for i, line in enumerate(content.splitlines(), 1) if query.lower() in line.lower()]
-        structural = [s for s in symbols if s["name"].lower() in terms]
-        score = 10 * len(structural) + 5 * bool(exact) + sum(t in content.lower() or t in path.lower() for t in terms)
-        if score:
-            line = exact[0] if exact else structural[0]["line"] if structural else 1
-            matches.append({"path": path, "line": line, "score": score, "symbols": structural[:20],
-                            "excerpt": "\n".join(content.splitlines()[max(0, line - 2):line + 5])[:2500],
-                            "trust": "UNTRUSTED_CONTENT", "instructions_authoritative": False})
-    return sorted(matches, key=lambda m: (-m["score"], m["path"]))[:8]
+    """Only the authorized, sanitized task snapshot reaches retrieval."""
+    from aegis.coding.retrieval import search as retrieve
+    return retrieve(files, query)
 
 
 def diff(before, after):
     # Explicit newline markers keep patches valid even for files without final LF.
     chunks = []
-    for path in sorted(before):
-        for line in difflib.unified_diff(before[path].splitlines(keepends=True), after[path].splitlines(keepends=True),
-                                         fromfile="a/" + path, tofile="b/" + path):
+    for path in sorted(set(before) | set(after)):
+        if path in before and path in after and before[path] == after[path]:
+            continue
+        chunks.append(f"diff --git {json.dumps('a/' + path, ensure_ascii=False)} {json.dumps('b/' + path, ensure_ascii=False)}\n")
+        # Unified diff has no hunk for an empty file. Preserve structural changes
+        # in a Git-compatible patch so they still require review and export.
+        if path not in before:
+            chunks.append("new file mode 100644\n")
+            if after[path] == "":
+                chunks.append("index 0000000..e69de29\n")
+        elif path not in after:
+            chunks.append("deleted file mode 100644\n")
+            if before[path] == "":
+                chunks.append("index e69de29..0000000\n")
+        for line in difflib.unified_diff(before.get(path, "").splitlines(keepends=True), after.get(path, "").splitlines(keepends=True),
+                                         fromfile="a/" + path if path in before else "/dev/null",
+                                         tofile="b/" + path if path in after else "/dev/null"):
             chunks.append(line if line.endswith("\n") else line + "\n\\ No newline at end of file\n")
     return "".join(chunks)
 
@@ -114,8 +116,23 @@ def dispatch(action, files, original, mode, compartments):
         raise store.Denied("INVALID_TOOL_ARGUMENTS", "Tool arguments do not match the approved schema")
     if "path" in args:
         path = path_name(args["path"])
-        if path not in files:
+        if path not in files and tool != "repository.create":
             raise store.Denied("UNAUTHORIZED_FILE_ACCESS", "Path is absent or quarantined in this snapshot")
+    if tool == "repository.create":
+        if path in files:
+            raise store.Denied("EDIT_CONFLICT", "File already exists")
+        inspect_text(args["content"], compartments)
+        validate_files({**files, path: args["content"]})
+        files[path] = args["content"]
+        return {"path": path, "status": "CREATION_STAGED_FOR_REVIEW"}
+    if tool == "repository.delete":
+        if len(files) == 1:
+            raise store.Denied("EDIT_CONFLICT", "Cannot remove the entire snapshot")
+        del files[path]
+        return {"path": path, "status": "DELETION_STAGED_FOR_REVIEW"}
+    if tool.startswith("sandbox."):
+        from aegis.coding.sandbox import execute
+        return execute(files, tool.split(".")[1])
     if tool == "repository.read":
         return {"path": path, "content": files[path], "trust": "UNTRUSTED_CONTENT", "instructions_authoritative": False}
     if tool == "repository.search":

@@ -1,18 +1,14 @@
 """Local-only, opt-in simulation API. Persona IDs simulate identity, not authentication."""
 import os
 from typing import Literal
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from aegis.api.demo import require_demo_mode
 from aegis.control import artifacts, capsules, data, demo, leases, packages, policy, store
 from aegis.control.runtime import GovernedRunner
+from aegis.security.auth import principal, configured
 
 router = APIRouter(prefix="/api/control", tags=["Sovereign control plane"])
-
-
-def principal(x_aegis_actor: str = Header(default="operator")):
-    require_demo_mode()
-    return policy.actor(x_aegis_actor)["id"]
 
 
 class Strict(BaseModel):
@@ -120,20 +116,35 @@ class LearningPlan(Strict):
 
 @router.get("/status")
 def status():
-    return {"enabled": os.environ.get("AEGIS_ENABLE_DEMO_ENDPOINTS") == "1", "mode": "Software-simulated attestation",
-            "identity": "LOCAL_DEMO_PERSONAS_NOT_AUTHENTICATION", "policy_version": policy.POLICY_VERSION,
+    return {"enabled": configured() or os.environ.get("AEGIS_ENABLE_DEMO_ENDPOINTS") == "1", "mode": "Software-simulated attestation",
+            "identity": "AUTHENTICATED_LOCAL_ACCOUNTS" if configured() else "LOCAL_DEMO_PERSONAS_NOT_AUTHENTICATION", "policy_version": policy.POLICY_VERSION,
             "training": "DISABLED", "automatic_chat_learning": "DISABLED", "persistent_memory": "DISABLED",
             "hardware_attestation": False, "physical_zeroization": False, "os_network_isolation": False}
 
 
 @router.get("/state")
 def state(identity=Depends(principal)):
+    person = policy.actor(identity)
+    audit = person["role"] in {"Auditor", "Security Officer"}
+    def visible(source):
+        return source["compartment"] in person["compartments"] and policy.LEVELS[source["classification"]] <= policy.LEVELS[person["clearance"]]
+    def package_summary(value):
+        return {k: v for k, v in value.items() if k in {"id", "status", "faults", "imported_at", "qualification", "shadow"}}
+    def capsule_summary(value):
+        return {k: v for k, v in value.items() if k in {"id", "status", "approval_id"}}
+    # Full arbitrary import manifests/components belong to model custody, not the
+    # unscoped workspace read API. Demo retains its original walkthrough fields.
+    from aegis.security.auth import demo_identity_enabled
+    full = demo_identity_enabled() or person["role"] in {"Model Custodian", "Security Officer"}
     return {"actors": policy.ACTORS, "skills": policy.SKILLS, "demo": store.get("demo", "main"),
-            "capsules": store.all_objects("capsule"), "packages": store.all_objects("package"),
-            "sources": [data.public_source(s) for s in store.all_objects("source")],
-            "approvals": store.all_objects("approval"), "leases": store.all_objects("lease"),
-            "tasks": store.all_objects("task"), "artifacts": store.all_objects("artifact"),
-            "receipts": store.receipts(), "chain": store.verify_chain()}
+            "capsules": [v if full else capsule_summary(v) for v in store.all_objects("capsule")],
+            "packages": [v if full else package_summary(v) for v in store.all_objects("package")],
+            "sources": [data.public_source(s) for s in store.all_objects("source") if visible(s)],
+            "approvals": [v for v in store.all_objects("approval") if audit or v["requester"] == identity or person["role"] in v["required_roles"]],
+            "leases": [v for v in store.all_objects("lease") if audit or identity in {v["user"], v["issuer"]}],
+            "tasks": [v for v in store.all_objects("task") if v.get("user") == identity],
+            "artifacts": [v for v in store.all_objects("artifact") if v.get("owner") == identity],
+            "receipts": [v for v in store.receipts() if audit or v["actor"] == identity], "chain": store.verify_chain()}
 
 
 @router.post("/capsules")
@@ -232,24 +243,34 @@ def verify(identity=Depends(principal)):
     return store.verify_chain()
 
 
+@router.get("/receipts")
+def receipts(identity=Depends(principal)):
+    audit = policy.actor(identity)["role"] in {"Auditor", "Security Officer"}
+    return [value for value in store.receipts() if audit or value["actor"] == identity]
+
+
 @router.post("/demo/prepare")
 def prepare(identity=Depends(principal)):
+    require_demo_mode()
     policy.actor(identity, ["Operator"])
     return demo.prepare()
 
 
 @router.post("/demo/activate")
 def activate(identity=Depends(principal)):
+    require_demo_mode()
     return demo.activate(identity)
 
 
 @router.post("/demo/lease")
 def demo_lease(identity=Depends(principal)):
+    require_demo_mode()
     return demo.issue_demo_lease(identity)
 
 
 @router.post("/demo/run")
 def run_demo(req: Scenario, identity=Depends(principal)):
+    require_demo_mode()
     policy.actor(identity, ["Operator"])
     return demo.run_scenario(req.scenario, identity)
 

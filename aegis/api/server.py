@@ -2,8 +2,9 @@
 Aegis Sovereign AI Runtime - FastAPI Server
 Assembles all sovereign runtime endpoints and mounts the lightweight industrial UI.
 """
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from urllib.parse import urlsplit
 import os
 from fastapi.staticfiles import StaticFiles
@@ -22,10 +23,16 @@ from aegis.api.routes.tasks import router as tasks_router
 from aegis.api.routes.receipts import router as receipts_router
 from aegis.api.routes.control import router as control_router
 from aegis.api.routes.coding import router as coding_router
+from aegis.api.routes.auth import router as auth_router
+from aegis.api.routes.providers import router as providers_router
+from aegis.api.routes.telemetry import router as telemetry_router
+from aegis.security import auth
+from aegis import telemetry
 from aegis.control.store import init_control, Denied
 import asyncio
 import contextlib
 import logging
+import time
 
 from contextlib import asynccontextmanager
 
@@ -34,6 +41,8 @@ async def lifespan(app: FastAPI):
     """Initialize empty local storage on server start."""
     init_db()
     init_control()
+    auth.init_auth()
+    telemetry.init_telemetry()
     async def retention_worker():
         from aegis.control.artifacts import sweep
         from aegis.coding.service import sweep as sweep_coding
@@ -44,11 +53,20 @@ async def lifespan(app: FastAPI):
             except Exception:
                 logging.getLogger("aegis.retention").error("Retention sweep failed; inspect the local security ledger")
             await asyncio.sleep(30)
-    worker = asyncio.create_task(retention_worker()) if os.environ.get("AEGIS_ENABLE_DEMO_ENDPOINTS") == "1" else None
+    async def telemetry_worker():
+        while True:
+            try:
+                await asyncio.to_thread(telemetry.sample)
+            except Exception:
+                logging.getLogger("aegis.telemetry").error("Local telemetry sampling failed")
+            await asyncio.sleep(3)
+    workers = [asyncio.create_task(retention_worker())]
+    if not vercel_preview:
+        workers.append(asyncio.create_task(telemetry_worker()))
     try:
         yield
     finally:
-        if worker:
+        for worker in workers:
             worker.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await worker
@@ -93,7 +111,31 @@ async def protect_local_mutations(request: Request, call_next):
                 same_origin = False
         if not same_origin or request.headers.get("sec-fetch-site") == "cross-site":
             return JSONResponse({"detail": "Cross-origin mutations are not allowed"}, status_code=403)
-    return await call_next(request)
+    path = request.url.path
+    public_status = {"/api/auth/status", "/api/auth/login", "/api/control/status", "/api/coding/status"}
+    if path.startswith("/api/") and path not in public_status and not vercel_preview:
+        try:
+            await asyncio.to_thread(auth.authenticate, request)
+            await asyncio.to_thread(auth.authorize_legacy, request)
+        except HTTPException as error:
+            return JSONResponse({"detail": error.detail}, status_code=error.status_code,
+                                headers={"Cache-Control": "no-store"})
+        except Denied as error:
+            return JSONResponse({"detail": str(error), "code": error.code}, status_code=403)
+    started = time.monotonic()
+    response = await call_next(request)
+    if path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+        # Store only route templates, never path arguments, queries or request bodies.
+        route = getattr(request.scope.get("route"), "path", None)
+        if route and not path.startswith("/api/telemetry/") and not vercel_preview:
+            try:
+                await asyncio.to_thread(telemetry.init_telemetry)
+                await asyncio.to_thread(telemetry.event, request.method, route, response.status_code,
+                                        (time.monotonic() - started) * 1000)
+            except Exception:
+                logging.getLogger("aegis.telemetry").error("Local request metrics unavailable")
+    return response
 
 # Register API Routers
 app.include_router(dashboard_router)
@@ -105,6 +147,17 @@ app.include_router(tasks_router)
 app.include_router(receipts_router)
 app.include_router(control_router)
 app.include_router(coding_router)
+app.include_router(auth_router)
+app.include_router(providers_router)
+app.include_router(telemetry_router)
+
+
+@app.get("/api/endpoints", tags=["Operations"])
+def endpoints(identity=Depends(auth.principal)):
+    return {"endpoints": [{"path": route.path, "methods": sorted(route.methods),
+                           "summary": getattr(route, "summary", None) or route.name}
+                          for route in app.routes if getattr(route, "path", "").startswith("/api/")
+                          and getattr(route, "methods", None)]}
 
 
 @app.exception_handler(Denied)
@@ -115,6 +168,15 @@ async def control_denied(request: Request, exc: Denied):
 @app.exception_handler(ValueError)
 async def invalid_control_request(request: Request, exc: ValueError):
     return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_schema(request: Request, exc: RequestValidationError):
+    # FastAPI's default includes rejected input values, which can contain a
+    # password, source text, or credentials. Return field/error descriptions only.
+    return JSONResponse(status_code=422, content={"detail": [
+        {"loc": list(item["loc"]), "type": item["type"], "msg": item["msg"]}
+        for item in exc.errors()]})
 
 @app.get("/health")
 def health_check():

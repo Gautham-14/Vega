@@ -17,8 +17,9 @@
     "sandboxImageUri": "us-docker.pkg.dev/gemini-code-dev/gemini-cli/sandbox:0.62.0-nightly.20260918.g9450ade79"
   },
   "scripts": {
-    "start": "cross-env NODE_ENV=development node scripts/start.js",
-    "start:prod": "cross-env NODE_ENV=production node scripts/start.js",
+    "start": "node scripts/aegis.mjs",
+    "start:prod": "node scripts/aegis.mjs",
+    "start:legacy": "cross-env NODE_ENV=development node scripts/start.js",
     "start:a2a-server": "CODER_AGENT_PORT=41242 npm run start --workspace @google/gemini-cli-a2a-server",
     "debug": "cross-env DEBUG=1 node --inspect-brk scripts/start.js",
     "deflake": "node scripts/deflake.js",
@@ -90,9 +91,10 @@
     "cross-spawn": "7.0.6"
   },
   "bin": {
-    "aegis": "bundle/gemini.js"
+    "aegis": "scripts/aegis.mjs"
   },
   "files": [
+    "scripts/aegis.mjs",
     "bundle/",
     "README.md",
     "LICENSE"

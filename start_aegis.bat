@@ -11,7 +11,7 @@ REM Verify Python is available
 python --version >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Python 3 not detected in PATH.
-    echo Please install Python 3.10+ to run Aegis locally.
+    echo Please install Python 3.11+ to run Aegis locally.
     pause
     exit /b 1
 )

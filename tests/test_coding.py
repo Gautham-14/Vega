@@ -191,7 +191,7 @@ def test_api_is_opt_in_and_strict(coding, monkeypatch):
         assert client.get("/api/coding/status").json()["workspace"] == "ENCRYPTED_SNAPSHOTS"
         assert client.post("/api/coding/tasks", json={"lease_id": "x", "prompt": "test", "purpose": "test", "shell": "x"}).status_code == 422
         monkeypatch.delenv("AEGIS_ENABLE_DEMO_ENDPOINTS")
-        assert client.get("/api/coding/state").status_code == 404
+        assert client.get("/api/coding/state").status_code == 401
 
 
 def test_local_provider_requires_configuration_and_pins_digest(coding, monkeypatch):

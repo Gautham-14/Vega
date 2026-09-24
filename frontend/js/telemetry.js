@@ -1,87 +1,37 @@
-// Browser-only fixtures. Never used for hardware eligibility or task decisions.
+/* Only host measurements returned by Aegis are plotted. */
 const Telemetry = {
-  intervalMs: 3000,
-  historySize: 41,
-  scenario: 'review',
-  tick: 0,
-  paused: false,
-  samples: [],
-  profiles: {
-    idle: {name: 'Idle workspace', cpu: 12, ram: 5.4, gpu: 3, vram: 0.4, disk: 8},
-    review: {name: 'Inspection review', cpu: 44, ram: 11.8, gpu: 38, vram: 3.2, disk: 95},
-    busy: {name: 'Busy queue', cpu: 78, ram: 24.2, gpu: 81, vram: 6.7, disk: 310}
+  percent(value) { return Number.isFinite(value) ? `${value.toFixed(1)}%` : 'Unavailable'; },
+  bytes(value) {
+    if (!Number.isFinite(value)) return 'Unavailable';
+    return value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GB` : `${(value / 1024 ** 2).toFixed(0)} MB`;
   },
-  sample(tick) {
-    const profile = this.profiles[this.scenario];
-    const wave = Math.sin(tick * 0.47) * 0.65 + Math.cos(tick * 0.19) * 0.35;
-    const bound = (value, max) => Math.min(max, Math.max(0, value));
-    return {
-      cpu: bound(profile.cpu + wave * 8, 100),
-      ram: bound(profile.ram + wave * 0.8, 32),
-      gpu: bound(profile.gpu + Math.sin(tick * 0.31) * 7, 100),
-      vram: bound(profile.vram + wave * 0.3, 8),
-      disk: bound(profile.disk * (1 + wave * 0.3), 500)
-    };
+  time(value) { return Number.isFinite(value) ? new Date(value * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—'; },
+  points(samples, field) {
+    const rows = samples.filter(row => Number.isFinite(row.timestamp) && Number.isFinite(row[field]));
+    if (!rows.length) return '';
+    const first = samples[0].timestamp, last = samples.at(-1).timestamp;
+    return rows.map(row => `${last > first ? ((row.timestamp - first) / (last - first) * 720).toFixed(1) : 720},${(179 - Math.max(0, Math.min(100, row[field])) * 1.78).toFixed(1)}`).join(' ');
   },
-  reset() {
-    this.tick = 0;
-    this.samples = Array.from({length: this.historySize}, (_, i) => this.sample(i - this.historySize + 1));
-    this.updatedAt = new Date();
-    this.render();
-  },
-  advance() {
-    if (this.paused || document.hidden) return;
-    this.samples.push(this.sample(++this.tick));
-    this.samples.shift();
-    this.updatedAt = new Date();
-    this.render();
-  },
-  text(id, value) { document.getElementById(id).textContent = value; },
-  meter(id, value) { document.getElementById(id).style.width = `${value}%`; },
-  render() {
-    const current = this.samples.at(-1);
-    const ramPercent = current.ram / 32 * 100;
-    this.text('cpu-info', `8 cores · ${current.cpu.toFixed(0)}% in use`);
-    this.text('ram-info', `${(32 - current.ram).toFixed(1)} / 32 GB free`);
-    this.text('gpu-info', `${current.gpu.toFixed(0)}% · ${current.vram.toFixed(1)} / 8 GB`);
-    this.meter('cpu-meter', current.cpu);
-    this.meter('ram-meter', ramPercent);
-    this.meter('gpu-meter', current.gpu);
-    this.text('telemetry-overview-status', `${this.profiles[this.scenario].name} · ${this.paused ? 'Paused' : 'Updates every 3 seconds'}`);
-    this.text('telemetry-cpu', `${current.cpu.toFixed(0)}%`);
-    this.text('telemetry-ram', `${current.ram.toFixed(1)} GB`);
-    this.text('telemetry-gpu', `${current.gpu.toFixed(0)}%`);
-    this.text('telemetry-vram', `${current.vram.toFixed(1)} of 8 GB VRAM`);
-    this.text('telemetry-disk', `${current.disk.toFixed(0)} MB/s`);
-    this.text('system-free-ram', `${(32 - current.ram).toFixed(1)} GB`);
-    this.text('telemetry-updated', this.updatedAt.toLocaleTimeString());
-    this.text('telemetry-status', this.paused ? 'Simulation paused' : 'Simulation running · 3-second samples');
-    this.text('telemetry-pause', this.paused ? 'Resume simulation' : 'Pause simulation');
-    document.getElementById('telemetry-pause').setAttribute('aria-pressed', String(this.paused));
-    for (const metric of ['cpu', 'ram', 'gpu']) {
-      const points = this.samples.map((sample, i) => {
-        const percent = metric === 'ram' ? sample.ram / 32 * 100 : sample[metric];
-        return `${(i / (this.historySize - 1) * 720).toFixed(1)},${(180 - percent * 1.8).toFixed(1)}`;
-      }).join(' ');
-      document.getElementById(`telemetry-line-${metric}`).setAttribute('points', points);
-    }
-    document.getElementById('overview-cpu-line').setAttribute('points', this.samples.map((sample, i) =>
-      `${(i / (this.historySize - 1) * 720).toFixed(1)},${(90 - sample.cpu * 0.9).toFixed(1)}`).join(' '));
-    document.getElementById('telemetry-chart').setAttribute('aria-label',
-      `Simulated resource history. Current CPU ${current.cpu.toFixed(0)} percent, memory ${ramPercent.toFixed(0)} percent, GPU ${current.gpu.toFixed(0)} percent.`);
-  },
-  init() {
-    this.paused = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    document.getElementById('telemetry-scenario').addEventListener('change', event => {
-      this.scenario = event.target.value;
-      this.reset();
-    });
-    document.getElementById('telemetry-pause').addEventListener('click', () => {
-      this.paused = !this.paused;
-      this.render();
-    });
-    document.getElementById('telemetry-reset').addEventListener('click', () => this.reset());
-    this.reset();
-    setInterval(() => this.advance(), this.intervalMs);
+  render(latest, history) {
+    const put = (id, value) => { document.getElementById(id).textContent = value; };
+    put('cpu-value', this.percent(latest.cpu_percent));
+    put('cpu-note', `${latest.cpu_cores ?? 'Unknown'} logical CPU cores`);
+    put('memory-value', this.percent(latest.memory_percent));
+    put('memory-note', `${this.bytes(latest.memory_used_bytes)} of ${this.bytes(latest.memory_total_bytes)}`);
+    put('disk-value', this.percent(latest.disk_percent));
+    put('disk-note', `${this.bytes(latest.disk_used_bytes)} of ${this.bytes(latest.disk_total_bytes)}`);
+    put('process-value', this.bytes(latest.process_rss_bytes));
+    put('gpu-note', `GPU: ${latest.gpu_percent === null ? 'unavailable' : this.percent(latest.gpu_percent)}. ${latest.gpu_note || ''}`);
+    put('uptime', `Process uptime: ${Math.floor((latest.uptime_seconds || 0) / 60)} min`);
+    put('telemetry-updated', `Measured ${this.time(latest.timestamp)}`);
+    document.getElementById('telemetry-updated').title = new Date(latest.timestamp * 1000).toLocaleString();
+    const rows = history.filter(row => row.source === 'HOST_MEASURED' && Number.isFinite(row.timestamp)).sort((a,b) => a.timestamp - b.timestamp);
+    document.getElementById('cpu-line').setAttribute('points', this.points(rows, 'cpu_percent'));
+    document.getElementById('memory-line').setAttribute('points', this.points(rows, 'memory_percent'));
+    document.getElementById('history-chart').setAttribute('aria-label', `Measured CPU and memory history, ${rows.length} samples. Latest CPU ${this.percent(latest.cpu_percent)}, memory ${this.percent(latest.memory_percent)}.`);
+    put('history-start', this.time(rows[0]?.timestamp));
+    put('history-end', this.time(rows.at(-1)?.timestamp));
+    put('history-note', rows.length > 1 ? `${rows.length} host measurements · ${Math.round((rows.at(-1).timestamp - rows[0].timestamp) / 60)} minutes · utilization in percent` : 'Collecting measured history. The chart fills as samples arrive.');
   }
 };
+if (typeof module !== 'undefined') module.exports = Telemetry;

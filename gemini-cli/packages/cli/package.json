@@ -1,7 +1,7 @@
 {
   "name": "@aegis/cli",
   "version": "1.0.0",
-  "description": "Gemini CLI",
+  "description": "Aegis local governed operations CLI",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -10,11 +10,12 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "aegis": "dist/index.js"
+    "aegis": "aegis.mjs"
   },
   "scripts": {
     "build": "node ../../scripts/build_package.js",
-    "start": "node dist/index.js",
+    "start": "node aegis.mjs",
+    "start:legacy": "node dist/index.js",
     "debug": "node --inspect-brk dist/index.js",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write .",
@@ -24,6 +25,7 @@
     "typecheck": "tsc --noEmit"
   },
   "files": [
+    "aegis.mjs",
     "dist"
   ],
   "config": {
