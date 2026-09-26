@@ -1,0 +1,2 @@
+# Optional local image decoding. Model runtimes and weights are configured separately.
+Pillow>=11.3.0

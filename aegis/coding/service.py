@@ -12,14 +12,15 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 from aegis.control import capsules, data, policy, store
 from aegis.control.runtime import POLICY_STATE
-from aegis.coding import providers, tools, sandbox, retrieval, git_workspace
+from aegis.coding import providers, tools, sandbox, retrieval, git_workspace, tokenizer, embedding
+from aegis.security import lockdown
 
 PURPOSES = {"ASK": "code-understanding", "PLAN": "code-planning", "EXECUTE": "secure-code-remediation"}
 DEMO_FILES = {"validation.py": "def valid_port(port):\n    return 0 <= port <= 65535\n",
               "test_validation.py": "from validation import valid_port\n\ndef test_port_boundaries():\n    assert not valid_port(0)\n    assert valid_port(1)\n    assert valid_port(65535)\n    assert not valid_port(65536)\n"}
 IMPLEMENTATION_PATHS = [Path(__file__), Path(providers.__file__), Path(tools.__file__), Path(capsules.__file__),
                         Path(data.__file__), Path(policy.__file__), Path(store.__file__), Path(sandbox.__file__),
-                        Path(retrieval.__file__), Path(git_workspace.__file__)]
+                        Path(retrieval.__file__), Path(git_workspace.__file__), Path(tokenizer.__file__), Path(embedding.__file__), Path(lockdown.__file__)]
 LOADED_IMPLEMENTATION = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in IMPLEMENTATION_PATHS}
 
 
@@ -59,6 +60,8 @@ def components(spec):
 def register_capsule(provider, identity):
     policy.actor(identity, ["Operator"])
     spec = providers.specification(provider)
+    if spec.get("protocol") == "sd-webui":
+        raise ValueError("Use a media Capsule for diffusion providers")
     value = capsules.register(components(spec), identity)
     approval = policy.request_approval("capsule", {"capsule_id": value["id"]}, identity)
     return {"capsule": value, "approval": approval}
@@ -93,22 +96,25 @@ def attest(capsule_id):
 
 def issue_lease(repository_id, capsule_id, user, mode, minutes, allow_export, identity):
     policy.actor(identity, ["Data Owner"])
+    generation = lockdown.check()
     repository = verified("repository", repository_id)
     policy.actor(user, ["Operator"])
     policy.authorize_label(user, repository["label"])
-    attest(capsule_id)
+    spec, _ = attest(capsule_id)
+    providers.require_sensitive_boundary(spec, repository["label"]["classification"])
     if mode not in tools.MODES or not 1 <= minutes <= 15:
         raise ValueError("Choose ASK, PLAN or EXECUTE and a lifetime of 1-15 minutes")
     value = {"id": store.uid("CODE-LEASE"), "user": user, "issuer": identity, "repository_id": repository_id,
              "repository_hash": repository["content_hash"], "capsule_id": capsule_id, "label": repository["label"],
              "mode": mode, "purpose": PURPOSES[mode], "tools": tools.MODES[mode], "allow_export": allow_export,
-             "issued_at": time.time(), "expires_at": time.time() + minutes * 60}
+             "issued_at": time.time(), "expires_at": time.time() + minutes * 60, "lockdown_generation": generation}
     store.receipt("CODING_LEASE_ISSUED", identity, lease_id=value["id"], **{k: v for k, v in public(value).items() if k != "id"})
     return public(sealed("lease", value))
 
 
 def validate_lease(lease_id, identity, purpose):
     lease = verified("lease", lease_id)
+    lockdown.check(lease.get("lockdown_generation", 0))
     if lease["user"] != identity:
         raise store.Denied("PURPOSE_LEASE_MISMATCH", "This lease belongs to a different persona")
     if lease["expires_at"] <= time.time():
@@ -122,6 +128,7 @@ def validate_lease(lease_id, identity, purpose):
     if repository["content_hash"] != lease["repository_hash"] or repository["label"] != lease["label"]:
         raise store.Denied("CODING_INTEGRITY_FAILURE", "Repository revision or label changed")
     spec, measured = attest(lease["capsule_id"])
+    providers.require_sensitive_boundary(spec, lease["label"]["classification"])
     return lease, repository, spec, measured
 
 

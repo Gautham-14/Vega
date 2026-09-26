@@ -2,6 +2,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+.runtime/
+wheelhouse/
 data/
 
 # Local runtime state and secrets
@@ -10,7 +12,9 @@ data/
 *.sqlite3
 *.log
 control.key
+control.key.dpapi
 *.enc
+*.aegis-backup
 
 # Coverage and test reports
 .coverage
@@ -34,3 +38,5 @@ dist/
 
 # Local reference material; implementation documentation remains tracked
 *.pdf
+.audit-tmp/
+backups/

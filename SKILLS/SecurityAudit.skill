@@ -1,0 +1,24 @@
+name: SecurityAudit
+description: "Perform a comprehensive security audit of a specific code repository."
+
+allowed_data:
+  - Code Repositories
+  - Security Policies
+  - Known Vulnerabilities Database
+
+allowed_tools:
+  - Code Analyzer
+  - Dependency Checker
+  - Internal Search
+
+forbidden:
+  - Modification of code
+  - Internet Access
+  - Execution of untrusted code
+
+validation:
+  - All findings must reference specific lines of code
+  - Vulnerability scores must be verified
+
+output: Security_Audit_Report.md
+risk_level: HIGH

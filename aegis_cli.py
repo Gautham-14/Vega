@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import ctypes
 import hashlib
+import http.client
 import ipaddress
 import json
 import os
@@ -20,6 +22,18 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from getpass import getpass
+from aegis.cli_support import GUIDES, doctor, terminal_text
+
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.json import JSON
+    from rich.theme import Theme
+    console = Console(theme=Theme({"info": "dim cyan", "warning": "magenta", "danger": "bold red"}))
+    has_rich = True
+except ImportError:
+    has_rich = False
+    console = None
 
 BASE_URL = "http://127.0.0.1:8000/api"
 MAX_FILES, MAX_FILE_BYTES, MAX_IMPORT_BYTES = 64, 128_000, 512_000
@@ -51,16 +65,11 @@ def canonical_url(value):
 
 
 def no_links(path):
-    """Reject symlinks and Windows reparse points, including ancestor paths."""
-    path = Path(os.path.abspath(path))
-    for part in (path, *path.parents):
-        try:
-            info = part.lstat()
-        except FileNotFoundError:
-            continue
-        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
-            raise CLIError(f"Symbolic links and junctions are not allowed: {part}")
-    return path
+    from aegis.security.private_files import no_links as checked_path
+    try:
+        return checked_path(path)
+    except ValueError as error:
+        raise CLIError(str(error)) from None
 
 
 def restrict_permissions(path, directory=False):
@@ -192,10 +201,13 @@ class Client:
             else:
                 raise CLIError("Sign in with login <actor>, or explicitly select persona <actor> on an enabled demo server")
         payload = json.dumps(data).encode("utf-8") if data is not None else None
+        limit = 12_000_000 if endpoint.startswith("/media/") else MAX_RESPONSE_BYTES
+        if payload is not None and len(payload) > limit:
+            raise CLIError("API request exceeds the client size limit")
         request = urllib.request.Request(self.url + endpoint, data=payload, headers=headers, method=method)
         try:
             with self.opener.open(request, timeout=self.timeout) as response:
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                raw = response.read(limit + 1)
         except urllib.error.HTTPError as error:
             raw = error.read(16_385)
             try:
@@ -203,10 +215,11 @@ class Client:
             except (ValueError, UnicodeError, AttributeError):
                 detail = f"HTTP {error.code}"
             raise CLIError(f"API {error.code}: {json.dumps(redact(detail), ensure_ascii=True)}") from None
-        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
-            raise CLIError(f"Cannot reach Aegis at {self.url}: {type(error).__name__}. Start the server or check --url.") from None
-        if len(raw) > MAX_RESPONSE_BYTES:
-            raise CLIError("API response exceeded the 4 MB client limit")
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as error:
+            followup = " Check server state before retrying; a submitted operation may still complete." if method != "GET" else " Start the server or check --url."
+            raise CLIError(f"Cannot reach Aegis at {self.url}: {type(error).__name__}." + followup) from None
+        if len(raw) > limit:
+            raise CLIError("API response exceeded the client size limit")
         try:
             return json.loads(raw.decode("utf-8")) if raw else {}
         except (ValueError, UnicodeError):
@@ -255,8 +268,13 @@ class Client:
             raise CLIError("Lease has expired or been revoked")
         if not lease.get("purpose") or lease.get("mode") not in {"ASK", "PLAN", "EXECUTE"}:
             raise CLIError("Invalid coding lease returned by server")
+        incident = self.call("/security/lockdown")
+        if incident.get("enabled") is not False or type(incident.get("generation")) is not int:
+            raise CLIError("Execution is locked or its state is unavailable. Use lockdown status.")
+        if lease.get("lockdown_generation", 0) != incident["generation"]:
+            raise CLIError("This lease predates an incident-control change. Request a fresh lease from the Data Owner.")
         if save:
-            self.session.value["selected_lease"] = {"id": lease["id"], "actor": me["id"]}
+            self.session.value["selected_lease"] = {"id": lease["id"], "actor": me["id"], "mode": lease["mode"]}
             self.session.save()
         return lease
 
@@ -287,8 +305,36 @@ def redact(value):
     return value
 
 
-def print_result(value):
-    print(json.dumps(redact(value), indent=2, ensure_ascii=True))
+def print_result(value, *, json_output=False, plain=False):
+    redacted = redact(value)
+    if json_output:
+        print(json.dumps(redacted, ensure_ascii=True, separators=(",", ":")))
+    elif isinstance(value, dict) and value.get("kind") == "guide":
+        print(terminal_text(value["title"]))
+        print(terminal_text(value.get("reference", "")))
+        for index, step in enumerate(value.get("steps", []), 1):
+            print(f"{index}. {terminal_text(step)}")
+    elif isinstance(value, dict) and value.get("kind") == "diagnostics":
+        print(terminal_text(f"Aegis doctor | {value['status']} | {value['api_url']}"))
+        for check in redacted["checks"]:
+            print(terminal_text(f"[{check['status']}] {check['check']}: {check['detail']}"))
+            if check["status"] != "PASS":
+                print(terminal_text("  Next: " + check["next_step"]))
+        print(terminal_text(value["scope"]))
+    elif has_rich and not plain and sys.stdout.isatty():
+        from rich.text import Text
+        if isinstance(value, dict) and "patch" in value and isinstance(value["patch"], str):
+            console.print(Panel(Text(terminal_text(redacted["patch"])), title="Generated Patch", border_style="green"))
+            v2 = {k: v for k,v in redacted.items() if k != "patch"}
+            if v2: console.print(JSON(json.dumps(v2)))
+        elif isinstance(value, dict) and "answer" in value and isinstance(value["answer"], str):
+            console.print(Text(terminal_text(redacted["answer"])))
+            v2 = {k: v for k,v in redacted.items() if k != "answer"}
+            if v2: console.print(JSON(json.dumps(v2)))
+        else:
+            console.print(JSON(json.dumps(redacted)))
+    else:
+        print(json.dumps(redacted, indent=2, ensure_ascii=True))
 
 
 def json_file(path):
@@ -405,23 +451,95 @@ def export_patch(client, task_id, approval_id, destination):
     return {"exported": str(destination), "bytes": len(result["patch"].encode("utf-8")), "classification": result.get("classification")}
 
 
+def export_media(client, task_id, approval_id, filename):
+    destination = no_links(filename)
+    if destination.exists() or not destination.parent.is_dir():
+        raise CLIError("Choose a new export file in an existing local directory")
+    response = client.call(f"/media/tasks/{segment(task_id)}/export", "POST", {"approval_id": approval_id})
+    result = response["result"]
+    digest = hashlib.sha256(json.dumps(result, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
+    if digest != response.get("result_hash"):
+        raise CLIError("Media result hash does not match the reviewed output")
+    if result.get("images"):
+        if len(result["images"]) != 1 or destination.suffix.lower() != ".png":
+            raise CLIError("Image export requires one image and a .png destination")
+        item = result["images"][0]
+        raw = base64.b64decode(item["data"], validate=True)
+        if not raw.startswith(b"\x89PNG\r\n\x1a\n") or len(raw) > 2_000_000 or hashlib.sha256(raw).hexdigest() != item["sha256"]:
+            raise CLIError("Export image failed integrity checks")
+    else:
+        if destination.suffix.lower() != ".txt" or not isinstance(result.get("answer"), str):
+            raise CLIError("Vision answer export requires a .txt destination")
+        raw = result["answer"].encode("utf-8")
+    no_links(destination)
+    fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        restrict_permissions(destination)
+        with os.fdopen(fd, "wb") as stream:
+            fd = None
+            stream.write(raw)
+    finally:
+        if fd is not None:
+            os.close(fd)
+    return {"exported": str(destination), "bytes": len(raw), "result_hash": response["result_hash"]}
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description="Aegis terminal operator. Local API only; website displays telemetry.")
     parser.add_argument("--url", default=os.environ.get("AEGIS_API_URL", BASE_URL), help="Numeric loopback API URL (or AEGIS_API_URL)")
     parser.add_argument("--timeout", type=float, default=120, help="API timeout in seconds (1-300)")
     parser.add_argument("--persona", help="Explicit demo identity; requires enabled demo server with no accounts")
+    parser.add_argument("--plain", action="store_true", help="Disable terminal styling")
+    parser.add_argument("--json", action="store_true", help="Emit compact redacted JSON for one-shot commands")
     commands = parser.add_subparsers(dest="command")
+    guide = commands.add_parser("help", help="Guided workflows or exact command arguments")
+    guide.add_argument("topic", nargs="?", default="start")
+    commands.add_parser("doctor", help="Read-only local diagnostics; no model probes or downloads")
+    commands.add_parser("context", help="Inspect identity, selected lease and current incident authorization")
+    commands.add_parser("compose", help="Multiline prompt: /send, /preview, /clear or /cancel; shell only")
     for name, help_text in {
         "shell": "Interactive operator shell (default)", "status": "Authentication and local runtime status", "logout": "Revoke and clear this server's session", "whoami": "Show authenticated identity", "state": "Coding workspace state", "control-state": "Control plane state", "providers": "List local provider profiles and supported connections", "tasks": "List your coding tasks", "leases": "List visible coding leases", "repositories": "List visible repository snapshots", "validate": "Run local negative-case validation", "telemetry": "Read measured local telemetry", "receipts": "List control receipts", "endpoints": "Discover available API endpoints", "demo-prepare": "Prepare explicit control demo", "demo-activate": "Activate explicit control demo", "coding-fixture": "Import explicit coding demo fixture", "sandbox": "Inspect sandbox availability and enforcement",
     }.items():
         commands.add_parser(name, help=help_text)
     login = commands.add_parser("login", help="Sign in locally; password is prompted securely")
+    incident = commands.add_parser("lockdown", help="Inspect or change the Security Officer incident stop")
+    incident.add_argument("action", choices=["status", "enable", "disable"], nargs="?", default="status")
     login.add_argument("username", nargs="?")
     commands.add_parser("manifest-hash", help="Compute a metadata manifest checksum locally from JSON").add_argument("file")
+    bundle = commands.add_parser("bundle-verify", help="Verify every file in an independently signed offline model bundle")
+    bundle.add_argument("directory", help="Offline bundle directory containing manifest.json and manifest.sig")
+    bundle.add_argument("--trust-policy", required=True, help="Separately provisioned trust policy JSON outside the bundle")
+    qualification = commands.add_parser("provider-qualify", help="Run PUBLIC candidate tests; never grants production approval")
+    qualification.add_argument("id", help="Registered live provider ID")
+    qualification.add_argument("suite", help="Reviewed PUBLIC qualification-suite JSON")
     users = commands.add_parser("users", help="Host administrator provisioning (same AEGIS data directory as server)")
     user_commands = users.add_subparsers(dest="user_command", required=True)
     user_commands.add_parser("roles", help="List supported account roles")
     user_commands.add_parser("set", help="Create/reset account and revoke its sessions").add_argument("actor")
+    backup = commands.add_parser("backup", help="Encrypted offline operational-state backup and recovery")
+    backup_commands = backup.add_subparsers(dest="backup_command", required=True)
+    backup_commands.add_parser("create", help="Create a new encrypted backup; prompts for passphrase").add_argument("file")
+    backup_commands.add_parser("verify", help="Authenticate backup, database and receipt chain").add_argument("file")
+    restore = backup_commands.add_parser("restore", help="Restore into a new directory without overwriting live data")
+    restore.add_argument("file")
+    restore.add_argument("directory")
+    drill = backup_commands.add_parser("drill", help="Restore to a new directory and verify written files and receipt chain")
+    drill.add_argument("file")
+    drill.add_argument("directory")
+    commands.add_parser("media-capabilities", help="Inspect local image support and limits")
+    commands.add_parser("media-register", help="Register a vision/diffusion Capsule for approval").add_argument("provider")
+    media = commands.add_parser("media-prepare", help="Prepare image request JSON and explicitly named local images for review")
+    media.add_argument("file")
+    media.add_argument("--image", action="append", default=[], help="PNG/JPEG/WebP file; repeat up to four times")
+    for name in ("media-review", "media-run", "media-revoke", "media-export-request"):
+        commands.add_parser(name, help="Operate a reviewed local image task").add_argument("id")
+    media_export = commands.add_parser("media-export", help="Save an approved result to a new PNG or text file")
+    media_export.add_argument("id")
+    media_export.add_argument("approval_id")
+    media_export.add_argument("file")
+    capacity = commands.add_parser("capacity", help="Estimate raw model weight memory from TOTAL parameters")
+    capacity.add_argument("parameters_billions", type=float)
+    capacity.add_argument("--bits", type=int, choices=[2, 3, 4, 8, 16, 32], default=4)
     for command, field, help_text in [("persona", "actor", "Select a demo identity explicitly"), ("provider-add", "file", "Register immutable local provider from JSON file"), ("provider-probe", "id", "Explicitly probe a local provider"), ("use", "id", "Select a live lease owned by signed-in account"), ("task", "id", "Read a coding task"), ("diff", "id", "Read task diff and review hash"), ("export-request", "id", "Request permission to export an applied patch"), ("review", "id", "Review exact patch bound to export approval"), ("close", "id", "Close task and destroy retained content"), ("revoke", "id", "Revoke coding lease"), ("provider", "id", "Inspect provider profile")]:
         commands.add_parser(command, help=help_text).add_argument(field)
     register = commands.add_parser("register", aliases=["coding-capsule"], help="Register measured Capsule and request dual approval")
@@ -485,8 +603,89 @@ def provision_user(args):
     return provision(args.actor, password)
 
 
+def backup_command(args):
+    from aegis.security import recovery
+    if args.backup_command == "create":
+        password = getpass("New backup passphrase (16-256 characters): ")
+        if password != getpass("Confirm backup passphrase: "):
+            raise CLIError("Backup passphrases do not match")
+        return recovery.create_backup(args.file, password)
+    password = getpass("Backup passphrase: ")
+    if args.backup_command == "verify":
+        return recovery.verify_backup(args.file, password)
+    if args.backup_command == "drill":
+        return recovery.drill_backup(args.file, args.directory, password)
+    return recovery.restore_backup(args.file, args.directory, password)
+
+
 def execute(args, client):
     command = {"coding-capsule": "register", "coding-lease": "lease", "coding-run": "run"}.get(args.command, args.command)
+    if command == "help":
+        if args.topic in GUIDES:
+            return {"kind": "guide", "title": "Aegis / " + args.topic, "steps": GUIDES[args.topic]}
+        subcommands = next(action for action in build_parser()._actions if isinstance(action, argparse._SubParsersAction)).choices
+        if args.topic not in subcommands:
+            raise CLIError("Unknown help topic. Use help for workflows or --help for all commands.")
+        return {"kind": "guide", "title": "Aegis / " + args.topic, "reference": subcommands[args.topic].format_help()}
+    if command == "doctor":
+        previous = client.timeout
+        client.timeout = min(previous, 5)
+        try:
+            return doctor(client, CLIError)
+        finally:
+            client.timeout = previous
+    if command == "context":
+        identity = client.call("/auth/me")
+        incident = client.call("/security/lockdown")
+        selected = client.session.value.get("selected_lease", {})
+        lease = client.select_lease(selected["id"], save=False) if selected.get("id") else None
+        return {"identity": identity, "lockdown": incident, "lease": None if lease is None else
+                {key: lease.get(key) for key in ("id", "mode", "purpose", "expires_at", "lockdown_generation", "allow_export")},
+                "next_step": "run <prompt> or /compose in the shell" if lease else "use <lease-id>",
+                "scope": "Current application authorization; backend checks it again before execution."}
+    if command == "compose":
+        raise CLIError("Open the shell and use /compose. One-shot prompts use run <text>.")
+    if command == "capacity":
+        from aegis.hardware.capacity import estimate
+        return estimate(args.parameters_billions, args.bits)
+    if command == "lockdown":
+        return (client.call("/security/lockdown") if args.action == "status" else
+                client.call("/security/lockdown", "POST", {"enabled": args.action == "enable"}))
+    if command == "bundle-verify":
+        from aegis.security.offline_bundle import verify_bundle
+        return verify_bundle(args.directory, args.trust_policy)
+    if command == "media-capabilities":
+        return client.call("/media/capabilities")
+    if command == "media-register":
+        return client.call("/media/capsules", "POST", {"provider": args.provider})
+    if command == "media-prepare":
+        value = json_file(args.file)
+        if args.image:
+            if value.get("images") or len(args.image) > 4:
+                raise CLIError("Use up to four --image files; do not also include images in JSON")
+            value["images"] = []
+            for filename in args.image:
+                if filename.startswith(("\\\\", "//")):
+                    raise CLIError("Images must be local files")
+                path = no_links(filename)
+                if not path.is_file():
+                    raise CLIError("Image must be a regular local file")
+                with path.open("rb") as stream:
+                    raw = stream.read(2_000_001)
+                if len(raw) > 2_000_000:
+                    raise CLIError("Image exceeds 2 MB")
+                value["images"].append(base64.b64encode(raw).decode("ascii"))
+        return client.call("/media/tasks", "POST", value)
+    if command in {"media-review", "media-run", "media-revoke", "media-export-request"}:
+        path = f"/media/tasks/{segment(args.id)}"
+        result = client.call(path) if command == "media-review" else client.call(path + "/" + command.removeprefix("media-"), "POST")
+        for field, phase in (("request", "input"), ("result", "output")):
+            for index, item in enumerate(result.get(field, {}).get("images", [])):
+                item.pop("data", None)
+                item["preview_url"] = client.url + path + f"/images/{phase}/{index}"
+        return result
+    if command == "media-export":
+        return export_media(client, args.id, args.approval_id, args.file)
     if command == "manifest-hash":
         from aegis.models.manifest import ModelManifest, compute_manifest_sha256
         value = json_file(args.file)
@@ -505,6 +704,8 @@ def execute(args, client):
         return client.persona(args.actor)
     if command == "users":
         return provision_user(args)
+    if command == "backup":
+        return backup_command(args)
     if command == "status":
         return {"authentication": client.call("/auth/status", public=True), "coding": client.call("/coding/status", public=True), "api_url": client.url}
     get_routes = {"whoami": "/auth/me", "state": "/coding/state", "control-state": "/control/state", "providers": "/providers", "tasks": "/coding/tasks", "leases": "/coding/leases", "repositories": "/coding/repositories", "telemetry": "/telemetry/latest", "endpoints": "/endpoints", "receipts": "/control/receipts", "sandbox": "/coding/sandbox"}
@@ -519,6 +720,8 @@ def execute(args, client):
         return client.call("/providers", "POST", json_file(args.file))
     if command == "provider-probe":
         return client.call(f"/providers/{segment(args.id)}/probe", "POST")
+    if command == "provider-qualify":
+        return client.call(f"/providers/{segment(args.id)}/qualify", "POST", json_file(args.suite))
     if command == "register":
         provider = args.profile or args.provider or "reference"
         if args.profile and args.provider and args.profile != args.provider:
@@ -574,18 +777,52 @@ def execute(args, client):
 
 
 def failed_result(value):
-    return isinstance(value, dict) and (value.get("status") in {"BLOCKED", "FAILED", "FAIL", "DENIED", "REJECTED"}
+    return isinstance(value, dict) and (value.get("status") in {"BLOCKED", "FAILED", "FAIL", "DENIED", "REJECTED", "NEEDS_ATTENTION"}
         or any(value.get(key) is False for key in ("valid", "is_valid", "passed", "all_passed")))
 
 
-def shell(client, parser):
-    print(f"Aegis terminal | {client.url}")
-    print("Use /login <actor>, /help, or /exit. Plain text runs under your selected lease.")
-    print("Website: telemetry. Apply: encrypted task snapshot. Export: approved local patch.")
+def compose(client):
+    print("Multiline prompt. /preview reviews; /clear resets; /send submits; /cancel discards. Limit: 8000 characters.")
+    lines = []
+    while True:
+        try:
+            line = input("... ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return {"status": "CANCELLED", "model_calls": 0}
+        if line == "/cancel":
+            return {"status": "CANCELLED", "model_calls": 0}
+        if line == "/clear":
+            lines.clear()
+        elif line == "/preview":
+            print(terminal_text("\n".join(lines)) or "(empty)")
+        elif line == "/send":
+            text = "\n".join(lines)
+            if not text.strip():
+                print("Prompt is empty. Add text or /cancel.")
+                continue
+            return client.run(text)
+        elif len("\n".join([*lines, line])) > 8000:
+            print("That line exceeds the 8000-character limit and was not added. Use /clear or /cancel.")
+        else:
+            lines.append(line)
+
+
+def shell(client, parser, *, plain=False):
+    styled = has_rich and not plain and sys.stdout.isatty()
+    if styled:
+        console.print(Panel.fit("[bold blue]Aegis Terminal[/]\n[dim]Operate through the configured local API.[/]", title="Aegis", border_style="cyan"))
+        console.print("[info]/help, /doctor, /context, /compose, /login <actor>, /exit. Plain text uses the selected lease.[/]")
+    else:
+        print(f"Aegis terminal | {client.url}")
+        print("Use /help, /doctor, /context, /compose, /login <actor>, /exit. Plain text uses the selected lease.")
+        print("Website: telemetry. Apply: encrypted task snapshot. Export: approved local patch.")
     while True:
         actor = client.session.value.get("actor", "signed-out")
+        selected = client.session.value.get("selected_lease", {})
+        label = terminal_text(f"{actor} | {selected.get('mode', 'lease')} {selected['id']}" if selected.get("id") else f"{actor} | no lease")
         try:
-            line = input(f"aegis[{actor}]> ").strip()
+            line = input(f"aegis[{label}]> ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return 0
@@ -593,12 +830,17 @@ def shell(client, parser):
             continue
         if line in {"/exit", "/quit"}:
             return 0
-        if line in {"/help", "/?"}:
-            parser.print_help()
-            continue
+        if line == "/?":
+            line = "/help"
         try:
-            if not line.startswith("/"):
-                result = client.run(line)
+            if line == "/compose":
+                result = compose(client)
+            elif not line.startswith("/"):
+                if styled:
+                    with console.status("[bold green]Executing prompt...[/]", spinner="dots"):
+                        result = client.run(line)
+                else:
+                    result = client.run(line)
             else:
                 # Preserve Windows path backslashes and strip matching outer quotes.
                 words = shlex.split(line[1:], posix=False)
@@ -608,35 +850,50 @@ def shell(client, parser):
                     raise CLIError("Already in the Aegis shell")
                 if args.persona:
                     client.persona(args.persona)
-                result = execute(args, client)
-            print_result(result)
+                if styled and args.command not in {"login", "users", "backup"}:
+                    with console.status(f"[bold green]Running {args.command}...[/]", spinner="dots"):
+                        result = execute(args, client)
+                else:
+                    result = execute(args, client)
+            print_result(result, plain=plain)
             if failed_result(result):
-                print("Operation did not complete; inspect status and reason above.", file=sys.stderr)
+                if styled:
+                    console.print("[danger]Operation did not complete; inspect status and reason above.[/]")
+                else:
+                    print("Operation did not complete; inspect status and reason above.", file=sys.stderr)
         except SystemExit:
             continue  # argparse errors and --help never terminate an active shell.
         except (CLIError, OSError, ValueError, subprocess.SubprocessError) as error:
-            print("Error: " + str(error), file=sys.stderr)
+            print("Error: " + terminal_text(error), file=sys.stderr)
         except KeyboardInterrupt:
-            print("\nCommand interrupted.", file=sys.stderr)
+            print("\nCommand interrupted locally. Server work may continue; inspect task status before retrying.", file=sys.stderr)
 
 
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        if args.command == "users":
-            print_result(provision_user(args))
+        if args.json and (not args.command or args.command == "shell"):
+            raise CLIError("--json requires a one-shot command; use --plain shell for interactive text.")
+        if args.command in {"users", "backup"}:
+            print_result(provision_user(args) if args.command == "users" else backup_command(args), json_output=args.json, plain=args.plain)
+            return 0
+        if args.command in {"capacity", "manifest-hash", "bundle-verify", "help"}:
+            print_result(execute(args, None), json_output=args.json, plain=args.plain)
             return 0
         client = Client(args.url, args.timeout)
         if args.persona:
             client.persona(args.persona)
         if not args.command or args.command == "shell":
-            return shell(client, parser)
+            return shell(client, parser, plain=args.plain)
         result = execute(args, client)
-        print_result(result)
+        print_result(result, json_output=args.json, plain=args.plain)
         return 1 if failed_result(result) else 0
     except (CLIError, OSError, ValueError, subprocess.SubprocessError) as error:
-        print("Error: " + str(error), file=sys.stderr)
+        if args.json:
+            print_result({"status": "FAILED", "error": str(error)}, json_output=True)
+        else:
+            print("Error: " + terminal_text(error), file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print("Interrupted.", file=sys.stderr)

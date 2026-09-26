@@ -4,6 +4,11 @@ Reads real system CPU, RAM, and GPU availability without external dependencies.
 """
 import platform
 import psutil
+import csv
+import io
+import os
+import shutil
+import subprocess
 from typing import Dict, Any
 
 def detect_hardware() -> Dict[str, Any]:
@@ -11,8 +16,11 @@ def detect_hardware() -> Dict[str, Any]:
     # CPU
     physical_cores = psutil.cpu_count(logical=False) or 2
     logical_cores = psutil.cpu_count(logical=True) or 4
-    cpu_freq = psutil.cpu_freq()
-    freq_mhz = round(cpu_freq.current, 1) if (cpu_freq and cpu_freq.current is not None) else 2400.0
+    try:
+        cpu_freq = psutil.cpu_freq()
+    except (NotImplementedError, OSError, AttributeError):
+        cpu_freq = None
+    freq_mhz = round(cpu_freq.current, 1) if (cpu_freq and cpu_freq.current is not None) else None
 
     # RAM
     vmem = psutil.virtual_memory()
@@ -23,10 +31,12 @@ def detect_hardware() -> Dict[str, Any]:
     # GPU Check
     gpu_info = {
         "present": False,
-        "name": "None (Aegis runs CPU-only local sovereignty)",
+        "name": "GPU availability has not been measured",
         "vram_mb": 0,
         "required": False,
-        "status": "NOT REQUIRED"
+        "status": "UNAVAILABLE",
+        "devices": [],
+        "inference_compatibility": "NOT_VERIFIED"
     }
 
     try:
@@ -38,6 +48,29 @@ def detect_hardware() -> Dict[str, Any]:
             gpu_info["status"] = "DETECTED_OPTIONAL"
     except Exception:
         pass
+
+    # Detect installed NVIDIA hardware even when the optional torch package is absent.
+    executable = shutil.which("nvidia-smi")
+    if executable:
+        try:
+            result = subprocess.run([executable, "--query-gpu=name,memory.total,memory.free", "--format=csv,noheader,nounits"],
+                                    capture_output=True, text=True, timeout=3, check=True,
+                                    creationflags=0x08000000 if os.name == "nt" else 0)
+            devices = []
+            if len(result.stdout) > 16000:
+                raise ValueError("GPU inventory exceeds limit")
+            for row in csv.reader(io.StringIO(result.stdout)):
+                if len(row) != 3 or len(devices) >= 32:
+                    raise ValueError("Invalid GPU inventory")
+                total, free = int(row[1].strip()), int(row[2].strip())
+                if not 0 <= free <= total:
+                    raise ValueError("Invalid GPU memory")
+                devices.append({"name": row[0].strip()[:160], "vram_mb": total, "free_vram_mb": free})
+            if devices:
+                gpu_info.update(present=True, name=devices[0]["name"], vram_mb=devices[0]["vram_mb"],
+                                devices=devices, status="MEASURED_NVIDIA_SMI")
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
 
     return {
         "os": f"{platform.system()} {platform.release()} ({platform.machine()})",

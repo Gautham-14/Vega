@@ -1,0 +1,26 @@
+name: InspectionReview
+description: "Review scanned pump inspection report against the applicable maintenance SOP, calculate severity, and prepare an approval note."
+
+allowed_data:
+  - Maintenance SOPs
+  - Inspection Reports
+  - Equipment Manuals
+
+allowed_tools:
+  - OCR
+  - Internal Search
+  - Python Calculator
+  - DOCX Generator
+
+forbidden:
+  - HR Files
+  - Finance Records
+  - Internet Access
+
+validation:
+  - Every recommendation must have evidence
+  - Every calculation must be independently executed
+  - High-risk recommendations require approval
+
+output: Inspection_Approval_Note.docx
+risk_level: HIGH

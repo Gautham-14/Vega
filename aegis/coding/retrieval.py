@@ -19,6 +19,8 @@ import stat
 
 from aegis.control import store
 from aegis.storage.paths import safe_filename
+from aegis.coding.tokenizer import get_tokens
+from aegis.coding.embedding import MatryoshkaEmbeddingSystem
 
 MAX_FILES = 64
 MAX_BYTES = 512_000
@@ -65,6 +67,10 @@ def _model_root(directory):
     path = Path(directory)
     if not path.is_absolute() or path.is_symlink() or getattr(path, "is_junction", lambda: False)():
         raise ValueError("The model directory must be a real local directory")
+    for part in (path, *path.parents):
+        info = part.lstat()
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+            raise ValueError("Model directory ancestors cannot contain links or reparse points")
     resolved = path.resolve(strict=True)
     if not resolved.is_dir():
         raise ValueError("The model directory is unavailable")
@@ -88,6 +94,7 @@ def model_digest(directory):
             path = Path(parent) / name
             details = path.lstat()
             if (path.is_symlink() or getattr(path, "is_junction", lambda: False)()
+                    or getattr(details, "st_file_attributes", 0) & 0x400
                     or not path.resolve().is_relative_to(root)):
                 raise ValueError("Model links are not permitted")
             if stat.S_ISDIR(details.st_mode):
@@ -217,10 +224,8 @@ def _validate_snapshot(files, query):
 
 
 def _tokens(text):
-    # Token splitting is lexical only, never claimed as language parsing.
-    words = re.findall(r"\w+", text)
-    return [token.casefold() for word in words for token in
-            [word, *re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", word).replace("_", " ").split()]]
+    # Lexical identifier splitting, separate from model-native token IDs.
+    return get_tokens(text)
 
 
 def symbols(path, content):
@@ -265,31 +270,28 @@ def symbols(path, content):
 def _chunks(files):
     result = []
     for path, content in sorted(files.items()):
+        line = 1
         for start in range(0, len(content), CHUNK_CHARS):
-            result.append({"path": path, "line": content.count("\n", 0, start) + 1,
-                           "text": content[start:start + CHUNK_CHARS]})
+            chunk = content[start:start + CHUNK_CHARS]
+            result.append({"path": path, "line": line, "text": chunk})
+            line += chunk.count("\n")
     if len(result) > MAX_CHUNKS:
         raise ValueError("Snapshot exceeds retrieval chunk limit")
     return result
 
 
 def _semantic_scores(files, query, expected):
-    chunks, texts, encoded, model = _chunks(files), [], None, None
+    chunks, texts, rows, system = _chunks(files), [], None, None
     try:
         if not chunks:
             return {}
         if _embedding_configuration() != expected:
             raise store.Denied("EMBEDDING_CONFIGURATION_CHANGED", "Pinned embedding configuration changed")
         root = _model_root(os.environ.get("AEGIS_EMBEDDING_MODEL_DIR", ""))
-        loader = importlib.import_module("sentence_transformers").SentenceTransformer
-        model = loader(str(root), local_files_only=True, trust_remote_code=False, device="cpu", token=False,
-                       model_kwargs={"use_safetensors": True, "local_files_only": True, "trust_remote_code": False},
-                       config_kwargs={"local_files_only": True, "trust_remote_code": False})
-        model.max_seq_length = min(int(model.max_seq_length), 512)
+        system = MatryoshkaEmbeddingSystem(str(root), expected["model_digest"])
         texts = [query] + [item["text"] for item in chunks]
-        encoded = model.encode(texts, batch_size=8, show_progress_bar=False, normalize_embeddings=True,
-                               convert_to_numpy=True)
-        rows = encoded.tolist()
+        # Preserve the trained output dimension by default.
+        rows = system.encode(texts, dimensions=None)
         if len(rows) != len(texts) or not rows or not 1 <= len(rows[0]) <= 4096:
             raise ValueError("Invalid embedding output dimensions")
         dimensions = len(rows[0])
@@ -314,7 +316,7 @@ def _semantic_scores(files, query, expected):
     finally:
         texts.clear()
         chunks.clear()
-        del encoded, model
+        del rows, system
 
 
 def search(files, query):
@@ -340,8 +342,15 @@ def search(files, query):
         score = 10 * len(structural) + 5 * bool(exact) + lexical + semantic_score
         if score <= 0:
             continue
-        best_line = max(enumerate(lines, 1), key=lambda entry: len(terms.intersection(_tokens(entry[1]))), default=(1, ""))[0]
-        line = exact[0] if exact else structural[0]["line"] if structural else semantic_line if semantic_score > lexical else best_line
+        if exact:
+            line = exact[0]
+        elif structural:
+            line = structural[0]["line"]
+        elif semantic_score > lexical:
+            line = semantic_line
+        else:
+            line = max(enumerate(lines, 1), key=lambda entry: len(terms.intersection(_tokens(entry[1]))),
+                       default=(1, ""))[0]
         result.append({"path": path, "line": line, "score": round(score, 6), "symbols": structural[:20],
                        "excerpt": "\n".join(lines[max(0, line - 2):line + 5])[:2500],
                        "trust": "UNTRUSTED_CONTENT", "instructions_authoritative": False,

@@ -58,7 +58,10 @@ def generate_sovereignty_receipt(task_record: Dict[str, Any], final_artifact_con
             "pipeline_models": task_record.get("model_hashes", []),
             "model_id": task_record.get("model_id", "AEGIS-DEMO-TEXT"),
             "model_manifest_sha256": model_hash,
-            "qualification_status": "QUALIFIED",
+            "qualification_status": "DEMO_QUALIFIED",
+            "model_weights_verified": False,
+            "publisher_signature_verified": False,
+            "runtime_binding_verified": False,
             "execution_backend": "MockModelAdapter (Deterministic Local Sim)"
         },
         "knowledge_authority": {
@@ -115,7 +118,7 @@ def generate_sovereignty_receipt(task_record: Dict[str, Any], final_artifact_con
 ### Model Provenance
 - **Model ID:** `{task_record.get('model_id', 'AEGIS-DEMO-TEXT')}`
 - **Model SHA-256:** `{model_hash[:24]}...`
-- **Status:** `QUALIFIED`
+- **Status:** `DEMO_QUALIFIED` (fixture only; no model weights verified)
 
 ### Knowledge & Authority Layer
 - **Authoritative SOP Selected:** `{task_record.get('authoritative_sop', 'Pump_SOP_Rev8')}`

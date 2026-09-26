@@ -9,6 +9,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from aegis import config
+from aegis.control.store import init_control
 from aegis.api.server import app
 from aegis.hardware.simulation import set_active_hardware_profile_name
 from aegis.knowledge.demo_data import seed_knowledge_registry
@@ -26,6 +27,7 @@ from aegis.storage.database import execute_write, init_db, query_all
 @pytest.fixture(autouse=True)
 def seeded():
     init_db()
+    init_control()
     seed_model_registry()
     seed_knowledge_registry()
     set_active_hardware_profile_name("PROFILE_WORKSTATION")
@@ -205,12 +207,13 @@ def test_canonical_manifest_import_qualification_and_duplicate_protection():
     browser_hash = hashlib.sha256(json.dumps(core, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
     assert data["sha256"] == browser_hash
     response = TestClient(app).post("/api/models/import", json=data)
-    assert response.status_code == 200 and response.json()["integrity_verified"]
+    assert response.status_code == 200 and response.json()["manifest_checksum_matches"]
+    assert response.json()["integrity_verified"] is False
     run_simulated_qualification(data["id"])
-    assert get_model_by_id(data["id"])["benchmark_summary"]["integrity_check"] == "PASS"
+    assert get_model_by_id(data["id"])["benchmark_summary"]["integrity_check"] == "MANIFEST_CHECKSUM_PASS"
     with pytest.raises(sqlite3.IntegrityError):
         import_model_manifest(data)
-    assert get_model_by_id(data["id"])["status"] == "QUALIFIED"
+    assert get_model_by_id(data["id"])["status"] == "DEMO_QUALIFIED"
 
 
 @pytest.mark.parametrize("extra", [{"force_valid_hash": True}, {"allow_corrupt": True}, {"memory_req_mb": -1}, {"capabilities": []}])
@@ -221,7 +224,7 @@ def test_manifest_validation_rejects_bypasses_and_invalid_resources(extra):
 
 
 def test_unvetted_seed_model_cannot_be_promoted():
-    with pytest.raises(ValueError, match="License restriction"):
+    with pytest.raises(ValueError, match="License metadata restriction"):
         run_simulated_qualification("UNVERIFIED-EXPERIMENTAL-70B")
 
 
@@ -287,7 +290,8 @@ def test_cli_generated_manifest_hash_is_accepted_by_api(tmp_path):
     payload = aegis_cli.execute(args, None)
     response = TestClient(app).post("/api/models/import", json=payload)
     assert response.status_code == 200
-    assert response.json()["integrity_verified"] is True
+    assert response.json()["manifest_checksum_matches"] is True
+    assert response.json()["artifact_integrity_verified"] is False
 
 
 def test_connection_context_closes_the_database_handle():

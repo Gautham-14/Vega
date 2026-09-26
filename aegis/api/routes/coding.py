@@ -52,10 +52,11 @@ class ExportRequest(Strict):
 
 @router.get("/status")
 def status():
-    from aegis.coding import sandbox, retrieval
-    return {"enabled": configured() or demo_identity_enabled(), "identity": "AUTHENTICATED_LOCAL_ACCOUNTS" if configured() else "LOCAL_DEMO_PERSONAS_NOT_AUTHENTICATION",
+    from aegis.coding import sandbox
+    accounts = configured()
+    return {"enabled": accounts or demo_identity_enabled(), "identity": "AUTHENTICATED_LOCAL_ACCOUNTS" if accounts else "LOCAL_DEMO_PERSONAS_NOT_AUTHENTICATION",
             "workspace": "ENCRYPTED_SNAPSHOTS", "shell": "ARBITRARY_SHELL_BLOCKED", "sandbox": sandbox.configuration(),
-            "semantic_search": retrieval.configuration()["semantic_enabled"],
+            "semantic_search": None, "semantic_search_status": "AUTHENTICATED_CAPABILITIES_REQUIRED",
             "ollama_configured": bool(os.environ.get("AEGIS_OLLAMA_MODEL")), "automatic_downloads": False}
 
 

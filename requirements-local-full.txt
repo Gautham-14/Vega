@@ -1,0 +1,6 @@
+# Core, image decoding, native tokenizer and local retrieval embeddings.
+# Install only from a reviewed, hash-listed local wheelhouse.
+-r requirements.txt
+-r requirements-media.txt
+tokenizers>=0.21.0
+sentence-transformers>=3.4.0

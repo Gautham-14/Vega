@@ -1,0 +1,26 @@
+name: CodeRefactor
+description: "Refactor legacy code to meet modern architectural and styling standards."
+
+allowed_data:
+  - Target Code Repository
+  - Architecture Guidelines
+  - Style Guides
+
+allowed_tools:
+  - Code Editor
+  - Linter
+  - Unit Test Runner
+  - Internal Search
+
+forbidden:
+  - Modification of external APIs
+  - Changing business logic
+  - Internet Access
+
+validation:
+  - Unit tests must pass after refactoring
+  - Linter warnings must be zero
+  - Code review by a senior developer is required
+
+output: Refactored_Code_Patch.diff
+risk_level: MEDIUM

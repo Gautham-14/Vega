@@ -19,7 +19,7 @@ def test_dashboard_only_has_auth_mutations_and_no_fake_telemetry():
     assert '/api/auth/login' in app and '/api/auth/logout' in app
     assert 'Math.random' not in chart and 'Math.sin' not in chart
     assert 'HOST_MEASURED' in chart
-    assert 'HOSTED_PREVIEW' in app
+    assert 'HOSTED_PREVIEW' not in app
 
 
 def test_chart_uses_elapsed_time_and_handles_missing_values():

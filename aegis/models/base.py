@@ -82,7 +82,7 @@ class OllamaAdapter(ModelAdapter):
         return ["text", "reasoning"]
 
     def health(self) -> Dict[str, Any]:
-        return {"backend": "Ollama", "status": "AVAILABLE_IN_FULL_RELEASE", "is_mock": True}
+        return {"backend": "Ollama", "status": "NOT_IMPLEMENTED_USE_PROVIDER_PROFILES", "is_mock": True}
 
 
 class LlamaCppAdapter(ModelAdapter):
@@ -102,7 +102,7 @@ class LlamaCppAdapter(ModelAdapter):
         return ["text", "quantized_gguf"]
 
     def health(self) -> Dict[str, Any]:
-        return {"backend": "LlamaCpp", "status": "AVAILABLE_IN_FULL_RELEASE", "is_mock": True}
+        return {"backend": "LlamaCpp", "status": "NOT_IMPLEMENTED_USE_PROVIDER_PROFILES", "is_mock": True}
 
 
 class VLLMAdapter(ModelAdapter):
@@ -122,4 +122,4 @@ class VLLMAdapter(ModelAdapter):
         return ["text", "batched_throughput", "paged_attention"]
 
     def health(self) -> Dict[str, Any]:
-        return {"backend": "vLLM", "status": "AVAILABLE_IN_FULL_RELEASE", "is_mock": True}
+        return {"backend": "vLLM", "status": "NOT_IMPLEMENTED_USE_PROVIDER_PROFILES", "is_mock": True}

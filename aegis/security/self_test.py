@@ -161,13 +161,13 @@ def run_security_self_test() -> Dict[str, Any]:
 
     tests_run.append({
         "id": "TEST-05",
-        "name": "Model Package Cryptographic Integrity Check",
-        "description": "Verify that model manifests with mismatched SHA-256 hashes are automatically quarantined and denied execution.",
+        "name": "Demo Manifest Checksum Rejection",
+        "description": "Verify that demo model metadata with a mismatched self-declared checksum is quarantined; no model package is inspected.",
         "status": "PASS" if t5_passed else "FAIL",
-        "details": f"Corrupted model '{tampered_manifest['id']}' failed SHA-256 checksum. Status set to QUARANTINED.",
+        "details": f"Demo manifest '{tampered_manifest['id']}' failed its metadata checksum. Status set to QUARANTINED; model bytes were not checked.",
         "evidence": [
             f"Declared Hash: {tampered_manifest['sha256'][:16]}...",
-            "Integrity Verification: FAILED",
+            "Manifest Metadata Checksum: FAILED (artifact not inspected)",
             f"Assigned Status: {import_result['status']}"
         ]
     })

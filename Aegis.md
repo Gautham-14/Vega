@@ -2,7 +2,17 @@
 
 ## Self-Defending Sovereign Industrial AI Runtime
 
-> **Aegis is a self-defending sovereign industrial AI runtime that qualifies every model, isolates every task, distrusts every external context, verifies every important claim, adapts assurance to task risk, and produces verifiable proof of how each deliverable was generated Ã¢â‚¬â€ entirely on-premise and without external AI APIs.**
+**Implementation status (2026-09-25):** This document describes the target
+architecture. The current checkout is an application-security prototype, not
+proof of end-to-end industrial assurance. Local authorization, sealed approvals,
+offline bundle verification, governed coding/media flows, encrypted recovery and
+an incident execution stop are implemented. Real-model qualification, verified
+runtime binding, measured host isolation, independent claim verification and
+separate-media recovery remain acceptance requirements. See the
+[security review](SECURITY_REAUDIT_2026-09-25.md) and
+[operations guide](SECURITY_AND_RECOVERY.md) for verified scope and limitations.
+
+> **Aegis is a self-defending sovereign industrial AI runtime that qualifies every model, isolates every task, distrusts every external context, verifies every important claim, adapts assurance to task risk, and produces verifiable proof of how each deliverable was generated — entirely on-premise and without external AI APIs.**
 
 ## Why Aegis Exists
 
@@ -13,57 +23,57 @@ The problem is  **deployable, secure, reliable, maintainable, air-gapped industr
 A normal local AI setup:
 
 ```text
-User Ã¢â€ â€™ Ollama Ã¢â€ â€™ Local LLM Ã¢â€ â€™ Answer
+User → Ollama → Local LLM → Answer
 ```
 
 Aegis:
 
 ```text
 User Task
-   Ã¢â€ â€œ
+   ↓
 Risk Assessment
-   Ã¢â€ â€œ
+   ↓
 Skill / Workflow Selection
-   Ã¢â€ â€œ
+   ↓
 Authorized Data + Tools
-   Ã¢â€ â€œ
+   ↓
 Local Model Selection
-   Ã¢â€ â€œ
+   ↓
 Secure Execution
-   Ã¢â€ â€œ
+   ↓
 Evidence Verification
-   Ã¢â€ â€œ
+   ↓
 Artifact Generation
-   Ã¢â€ â€œ
+   ↓
 Sovereignty Receipt
 ```
 
 ## Core Architecture
 
 ```text
-Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â
-Ã¢â€â€š                       AEGIS                           Ã¢â€â€š
-Ã¢â€â€š      SELF-DEFENDING SOVEREIGN AI RUNTIME            Ã¢â€â€š
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â¤
-Ã¢â€â€š  1. Offline Model Registry                          Ã¢â€â€š
-Ã¢â€â€š  2. Model Quarantine & Shadow Qualification         Ã¢â€â€š
-Ã¢â€â€š  3. Resource-Aware Model Scheduler                  Ã¢â€â€š
-Ã¢â€â€š  4. Risk-Adaptive Assurance Engine                  Ã¢â€â€š
-Ã¢â€â€š  5. Skill / Workflow Runtime                        Ã¢â€â€š
-Ã¢â€â€š  6. Industrial Context Firewall                     Ã¢â€â€š
-Ã¢â€â€š  7. Claim-Level Evidence Gate                       Ã¢â€â€š
-Ã¢â€â€š  8. Ephemeral Task Enclaves                         Ã¢â€â€š
-Ã¢â€â€š  9. Authority-Aware Knowledge Layer                 Ã¢â€â€š
-Ã¢â€â€š 10. Sovereignty Receipt                             Ã¢â€â€š
-Ã¢â€â€š 11. Graceful Degradation Engine                     Ã¢â€â€š
-Ã¢â€â€š 12. Private Feedback Learning                       Ã¢â€â€š
-Ã¢â€â€š 13. Adversarial Self-Test Mode                      Ã¢â€â€š
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â¤
-Ã¢â€â€š                 LOCAL AI COMPONENTS                 Ã¢â€â€š
-Ã¢â€â€š Open-Weight LLMs Ã¢â‚¬Â¢ Vision Models Ã¢â‚¬Â¢ Embeddings       Ã¢â€â€š
-Ã¢â€â€š OCR Ã¢â‚¬Â¢ Vector DB Ã¢â‚¬Â¢ Rerankers Ã¢â‚¬Â¢ Code Sandbox          Ã¢â€â€š
-Ã¢â€â€š Office Artifact Generators Ã¢â‚¬Â¢ Local Databases        Ã¢â€â€š
-Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ
+┌──────────────────────────────────────────────────────┐
+│                       AEGIS                           │
+│      SELF-DEFENDING SOVEREIGN AI RUNTIME            │
+├──────────────────────────────────────────────────────┤
+│  1. Offline Model Registry                          │
+│  2. Model Quarantine & Shadow Qualification         │
+│  3. Resource-Aware Model Scheduler                  │
+│  4. Risk-Adaptive Assurance Engine                  │
+│  5. Skill / Workflow Runtime                        │
+│  6. Industrial Context Firewall                     │
+│  7. Claim-Level Evidence Gate                       │
+│  8. Ephemeral Task Enclaves                         │
+│  9. Authority-Aware Knowledge Layer                 │
+│ 10. Sovereignty Receipt                             │
+│ 11. Graceful Degradation Engine                     │
+│ 12. Private Feedback Learning                       │
+│ 13. Adversarial Self-Test Mode                      │
+├──────────────────────────────────────────────────────┤
+│                 LOCAL AI COMPONENTS                 │
+│ Open-Weight LLMs • Vision Models • Embeddings       │
+│ OCR • Vector DB • Rerankers • Code Sandbox          │
+│ Office Artifact Generators • Local Databases        │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## 1. Offline Model Registry
@@ -72,32 +82,32 @@ A truly air-gapped production server cannot simply download models from the inte
 
 ```text
 Internet-Connected Staging
-        Ã¢â€ â€œ
+        ↓
 Download Model
-        Ã¢â€ â€œ
+        ↓
 Security Scan
-        Ã¢â€ â€œ
+        ↓
 License Check
-        Ã¢â€ â€œ
+        ↓
 Dependency Validation
-        Ã¢â€ â€œ
+        ↓
 Benchmark
-        Ã¢â€ â€œ
+        ↓
 Quantization
-        Ã¢â€ â€œ
+        ↓
 Package Signing
-        Ã¢â€ â€œ
+        ↓
 Approved Offline Bundle
-        Ã¢â€ â€œ
+        ↓
 Secure Transfer
-Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â AIR GAP Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-        Ã¢â€ â€œ
+══════════ AIR GAP ══════════
+        ↓
 Aegis Runtime
-        Ã¢â€ â€œ
+        ↓
 Signature Verification
-        Ã¢â€ â€œ
+        ↓
 Local Qualification
-        Ã¢â€ â€œ
+        ↓
 Model Registry
 ```
 
@@ -107,19 +117,19 @@ A newly imported model should not immediately become production-ready.
 
 ```text
 New Model
-   Ã¢â€ â€œ
+   ↓
 QUARANTINE
-   Ã¢â€ â€œ
+   ↓
 Security & Integrity Checks
-   Ã¢â€ â€œ
+   ↓
 Offline Benchmark
-   Ã¢â€ â€œ
+   ↓
 Capability Profile
-   Ã¢â€ â€œ
+   ↓
 Shadow Production Mode
-   Ã¢â€ â€œ
+   ↓
 Compare Against Approved Model
-   Ã¢â€ â€œ
+   ↓
 APPROVE / RESTRICT / REJECT
 ```
 
@@ -130,19 +140,19 @@ Multiple models may need to share limited GPU resources.
 
 ```text
              TASK QUEUE
-                 Ã¢â€â€š
-                 Ã¢â€“Â¼
+                 │
+                 ▼
         RESOURCE SCHEDULER
-                 Ã¢â€â€š
-      Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â¼Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â
-      Ã¢â€“Â¼          Ã¢â€“Â¼          Ã¢â€“Â¼
+                 │
+      ┌──────────┼──────────┐
+      ▼          ▼          ▼
      VRAM       RAM        CPU
-                 Ã¢â€â€š
-                 Ã¢â€“Â¼
+                 │
+                 ▼
        MODEL RESIDENCY MANAGER
-                 Ã¢â€â€š
-      Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â¼Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â
-      Ã¢â€“Â¼          Ã¢â€“Â¼          Ã¢â€“Â¼
+                 │
+      ┌──────────┼──────────┐
+      ▼          ▼          ▼
      LOAD       EVICT     OFFLOAD
 ```
 
@@ -154,24 +164,24 @@ Not every task deserves the same verification depth.
 
 ```text
 TASK
- Ã¢â€ â€œ
+ ↓
 Risk Classification
- Ã¢â€ â€œ
+ ↓
 
 LOW RISK
-Ã¢â€ â€™ Single model
-Ã¢â€ â€™ Standard verification
+→ Single model
+→ Standard verification
 
 MEDIUM RISK
-Ã¢â€ â€™ Primary model
-Ã¢â€ â€™ Secondary verifier
-Ã¢â€ â€™ Evidence validation
+→ Primary model
+→ Secondary verifier
+→ Evidence validation
 
 HIGH RISK
-Ã¢â€ â€™ Independent models
-Ã¢â€ â€™ Deterministic calculations
-Ã¢â€ â€™ Evidence gate
-Ã¢â€ â€™ Human approval
+→ Independent models
+→ Deterministic calculations
+→ Evidence gate
+→ Human approval
 ```
 
 This spends extra compute only where consequences justify it.
@@ -196,25 +206,25 @@ Example:
 InspectionReview.skill
 
 Allowed Data:
-Ã¢Å“â€œ Maintenance SOPs
-Ã¢Å“â€œ Inspection Reports
-Ã¢Å“â€œ Equipment Manuals
+✓ Maintenance SOPs
+✓ Inspection Reports
+✓ Equipment Manuals
 
 Allowed Tools:
-Ã¢Å“â€œ OCR
-Ã¢Å“â€œ Internal Search
-Ã¢Å“â€œ Python Calculator
-Ã¢Å“â€œ DOCX Generator
+✓ OCR
+✓ Internal Search
+✓ Python Calculator
+✓ DOCX Generator
 
 Forbidden:
-Ã¢Å“â€¢ HR Files
-Ã¢Å“â€¢ Finance Records
-Ã¢Å“â€¢ Internet Access
+✕ HR Files
+✕ Finance Records
+✕ Internet Access
 
 Validation:
-Ã¢Å“â€œ Every recommendation must have evidence
-Ã¢Å“â€œ Every calculation must be independently executed
-Ã¢Å“â€œ High-risk recommendations require approval
+✓ Every recommendation must have evidence
+✓ Every calculation must be independently executed
+✓ High-risk recommendations require approval
 
 Output:
 Inspection_Approval_Note.docx
@@ -226,19 +236,19 @@ Every external context is treated as untrusted, including uploaded files, OCR te
 
 ```text
 Document
-   Ã¢â€ â€œ
+   ↓
 File Sanitization
-   Ã¢â€ â€œ
+   ↓
 Macro / Link / Hidden Text Scan
-   Ã¢â€ â€œ
+   ↓
 Prompt Injection Detection
-   Ã¢â€ â€œ
+   ↓
 Provenance Classification
-   Ã¢â€ â€œ
+   ↓
 Instruction / Evidence Separation
-   Ã¢â€ â€œ
+   ↓
 QUARANTINE Suspicious Content
-   Ã¢â€ â€œ
+   ↓
 Authorized Context
 ```
 
@@ -250,15 +260,15 @@ Aegis verifies important claims individually.
 Claim:
 "P-204 vibration exceeds the permitted limit."
 
-        Ã¢â€ â€œ
+        ↓
 Evidence Search
-        Ã¢â€ â€œ
+        ↓
 Inspection Report
 +
 Applicable SOP
 +
 Current Equipment Manual
-        Ã¢â€ â€œ
+        ↓
 VERIFIED
 ```
 
@@ -280,19 +290,19 @@ Every task executes inside a temporary isolated environment.
 
 ```text
 User Task
-   Ã¢â€ â€œ
+   ↓
 Create Temporary Enclave
-   Ã¢â€ â€œ
+   ↓
 Mount Authorized Files Only
-   Ã¢â€ â€œ
+   ↓
 Attach Authorized Tools Only
-   Ã¢â€ â€œ
+   ↓
 Network = Disabled
-   Ã¢â€ â€œ
+   ↓
 Execute Task
-   Ã¢â€ â€œ
+   ↓
 Export Approved Artifact
-   Ã¢â€ â€œ
+   ↓
 Destroy Enclave
 ```
 
@@ -369,9 +379,9 @@ If the preferred model cannot run because of hardware limits, Aegis recalculates
 
 ```text
 Preferred Pipeline
-     Ã¢â€ â€œ
+     ↓
 Insufficient VRAM
-     Ã¢â€ â€œ
+     ↓
 Smaller Model
 +
 Stronger Retrieval
@@ -379,7 +389,7 @@ Stronger Retrieval
 Additional Verifier
 +
 Reduced Context
-     Ã¢â€ â€œ
+     ↓
 Maintain Assurance Threshold
 ```
 
@@ -407,15 +417,15 @@ Aegis can process scanned documents, images, and engineering drawings using dete
 
 ```text
 P&ID
- Ã¢â€â€š
- Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ OCR
- Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Layout Detection
- Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Symbol Recognition
- Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Line / Connection Extraction
- Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Vision-Language Model
- Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ Internal Knowledge Retrieval
- Ã¢â€â€š
- Ã¢â€“Â¼
+ │
+ ├── OCR
+ ├── Layout Detection
+ ├── Symbol Recognition
+ ├── Line / Connection Extraction
+ ├── Vision-Language Model
+ └── Internal Knowledge Retrieval
+ │
+ ▼
 STRUCTURED ENGINEERING CONTEXT
 ```
 
@@ -429,25 +439,25 @@ Possible retrieval systems include Qdrant, FAISS, pgvector, Milvus, and Chroma.
 
 ```text
 Document
-   Ã¢â€ â€œ
+   ↓
 Parser
-   Ã¢â€ â€œ
+   ↓
 Chunking
-   Ã¢â€ â€œ
+   ↓
 Embedding Model
-   Ã¢â€ â€œ
+   ↓
 Local Vector Database
-   Ã¢â€ â€œ
+   ↓
 Hybrid Retrieval
-   Ã¢â€ â€œ
+   ↓
 Reranking
-   Ã¢â€ â€œ
+   ↓
 Authority Filter
-   Ã¢â€ â€œ
+   ↓
 Permission Filter
-   Ã¢â€ â€œ
+   ↓
 Trusted Evidence
-   Ã¢â€ â€œ
+   ↓
 Local LLM
 ```
 
@@ -456,18 +466,18 @@ Local LLM
 ```text
           ORGANIZATION BOUNDARY
 
-Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â
-Ã¢â€â€š Models                LOCAL       Ã¢â€â€š
-Ã¢â€â€š OCR                   LOCAL       Ã¢â€â€š
-Ã¢â€â€š Embeddings            LOCAL       Ã¢â€â€š
-Ã¢â€â€š Vector DB             LOCAL       Ã¢â€â€š
-Ã¢â€â€š Documents             LOCAL       Ã¢â€â€š
-Ã¢â€â€š Code Execution        LOCAL       Ã¢â€â€š
-Ã¢â€â€š Artifact Generation   LOCAL       Ã¢â€â€š
-Ã¢â€â€š Logs                  LOCAL       Ã¢â€â€š
-Ã¢â€â€š Authentication        LOCAL       Ã¢â€â€š
-Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ
-                  Ã¢â€â€š
+┌───────────────────────────────────┐
+│ Models                LOCAL       │
+│ OCR                   LOCAL       │
+│ Embeddings            LOCAL       │
+│ Vector DB             LOCAL       │
+│ Documents             LOCAL       │
+│ Code Execution        LOCAL       │
+│ Artifact Generation   LOCAL       │
+│ Logs                  LOCAL       │
+│ Authentication        LOCAL       │
+└───────────────────────────────────┘
+                  │
                   X
               INTERNET
 ```
@@ -485,7 +495,7 @@ Network Egress:          0 bytes
 
 The air-gap applies to more than the LLM.
 
-Aegis can package and validate Python wheels, NPM packages, OCR models, embedding models, fonts, document conversion libraries, application binaries, runtime configuration, checksums, signatures, and SBOM data.
+Aegis can package and validate Python wheels, NPM packages, Docker images, OCR models, embedding models, fonts, document conversion libraries, application binaries, runtime configuration, checksums, signatures, and SBOM data.
 
 ## Example End-to-End Workflow
 
@@ -497,32 +507,32 @@ Aegis:
 
 ```text
 1. Classify Task
-   Ã¢â€ â€™ Engineering Inspection
+   → Engineering Inspection
 
 2. Assign Risk
-   Ã¢â€ â€™ HIGH
+   → HIGH
 
 3. Create Task Enclave
-   Ã¢â€ â€™ Network Disabled
-   Ã¢â€ â€™ Engineering files only
+   → Network Disabled
+   → Engineering files only
 
 4. Inspect Uploaded File
-   Ã¢â€ â€™ Prompt injection scan
-   Ã¢â€ â€™ Sanitization
+   → Prompt injection scan
+   → Sanitization
 
 5. Select Workflow
-   Ã¢â€ â€™ Inspection Review Skill
+   → Inspection Review Skill
 
 6. Select Models
-   Ã¢â€ â€™ Vision Model
-   Ã¢â€ â€™ Reasoning Model
-   Ã¢â€ â€™ Embedding Model
+   → Vision Model
+   → Reasoning Model
+   → Embedding Model
 
 7. Perform OCR
 
 8. Retrieve Knowledge
-   Ã¢â€ â€™ Current authoritative SOP only
-   Ã¢â€ â€™ Applicable equipment manuals
+   → Current authoritative SOP only
+   → Applicable equipment manuals
 
 9. Execute Calculations
 

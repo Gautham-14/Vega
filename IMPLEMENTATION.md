@@ -12,6 +12,49 @@ The server and CLI default to `http://127.0.0.1:8000`. Use `--url http://127.0.0
 
 This is local account authentication, not enterprise SSO. One fixed account exists per prototype identity. The trusted host administrator can reset accounts and read the local software keys; HSM/TPM identity, multiple users per role, TLS/LAN deployment and external identity integration remain deployment work.
 
+## Operator help and diagnostics
+
+```powershell
+python aegis_cli.py help
+python aegis_cli.py help coding
+python aegis_cli.py help lease
+python aegis_cli.py doctor
+python aegis_cli.py --json doctor
+python aegis_cli.py --plain shell
+```
+
+Guided help works offline without opening session storage. Topics include
+`accounts`, `coding`, `images`, `models`, `security` and `recovery`; a command
+name shows its exact arguments. `--help` retains the complete parser reference.
+Put global `--json`, `--plain`, `--url` and `--timeout` options before the command.
+
+`doctor` reads application status, authentication, lockdown, receipt integrity
+and image-decoder availability. Without a session it checks only public status
+and tells you to sign in. Each request is capped at five seconds; diagnostics
+do not probe a model, run inference, download dependencies or repair settings.
+Partial/unavailable/blocked checks produce `NEEDS_ATTENTION` and exit code 1.
+A pass means these application checks passed, not model qualification, host
+isolation or backup assurance. `--json` emits compact redacted output and handled
+runtime errors; syntax errors retain argparse's stderr message and exit code 2.
+
+Inside the shell, `/help`, `/doctor` and `/context` use the same commands.
+`/context` reads the current identity, lockdown and selected lease from the
+server. `/use` and prompt submission reject incident-invalidated leases before
+submitting a task; the backend still rechecks authorization. The prompt's lease
+label is a cached selection, not a continuing authorization guarantee.
+
+`/compose` opens a multiline buffer. Blank lines and indentation are preserved;
+`/preview` displays it, `/clear` resets it, `/cancel` discards it and `/send`
+submits it under the selected lease. The limit is 8000 characters. Cancel/EOF
+before sending makes no model call. No shell history file is saved. Plain text
+outside the composer retains the existing immediate-send behavior. Interrupting
+a submitted request only interrupts the client; inspect task status before
+retrying because server work may continue.
+
+Terminal-rendered patches and answers display control characters and bidi
+overrides as visible escapes. Content is rendered literally rather than as
+terminal links. Exported files retain their approved original content.
+
 ## Coding workflow
 
 Run `python aegis_cli.py` for an interactive shell. Commands below use shell syntax; omit the leading slash when calling the Python program directly. IDs in angle brackets are values returned by earlier commands.

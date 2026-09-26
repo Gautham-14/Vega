@@ -61,6 +61,9 @@ def test_structural_patch_is_applicable_with_spaces(tmp_path):
     patch_text = tools.diff({"old empty.py": "", "removed.py": "old\n"}, {"new empty.py": "", "added.py": "new\n"})
     (tmp_path / "old empty.py").write_bytes(b"")
     (tmp_path / "removed.py").write_bytes(b"old\n")
+    # A workspace-local basetemp can sit inside the parent repository. Isolate
+    # Git here so apply does not silently ignore paths outside that subdirectory.
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "apply", "--check", "-"], input=patch_text.encode(), cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "apply", "-"], input=patch_text.encode(), cwd=tmp_path, check=True, capture_output=True)
     assert (tmp_path / "new empty.py").exists() and not (tmp_path / "old empty.py").exists()

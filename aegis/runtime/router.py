@@ -45,12 +45,12 @@ class ModelRouter:
         for candidate in candidates:
             model_id = candidate["id"]
             elig = eligibility_list.get(model_id, {})
-            if candidate["status"] != "QUALIFIED":
-                routing_notes.append(f"Rejected {model_id}: not qualified.")
+            if candidate["status"] != "DEMO_QUALIFIED":
+                routing_notes.append(f"Rejected {model_id}: not demo-qualified.")
             elif capability not in candidate["capabilities"]:
                 routing_notes.append(f"Rejected {model_id}: missing capability {capability}.")
             elif not model_integrity_verified(candidate) or candidate["license"] not in APPROVED_SOVEREIGN_LICENSES:
-                routing_notes.append(f"Rejected {model_id}: integrity or license metadata check failed.")
+                routing_notes.append(f"Rejected {model_id}: manifest checksum or license metadata check failed.")
             elif elig.get("eligibility") not in {"ELIGIBLE", "DEGRADED"}:
                 routing_notes.append(f"Rejected {model_id}: hardware requirements not met.")
             else:
@@ -60,7 +60,7 @@ class ModelRouter:
 
         # Fallback to AEGIS-DEMO-TEXT if needed
         if not selected_model:
-            raise RuntimeError(f"No qualified, eligible model with capability '{capability}' available.")
+            raise RuntimeError(f"No demo-qualified, eligible fixture with capability '{capability}' available.")
 
         adapter = MockModelAdapter(model_id=selected_model["id"])
 

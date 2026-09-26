@@ -2,13 +2,13 @@
 
 ## Executive summary
 
-Aegis should **not** be positioned as “another local LLM interface” or simply as an offline alternative to Codex/Claude Code. Local inference is already straightforward: Ollama can launch coding tools against local models, OpenCode supports local providers and multiple coding-agent sessions, Aider works with local Ollama models, llama.cpp provides highly portable quantised inference, and OpenHands supports local model servers. citeturn21search4turn20view0turn20view2turn20view3turn12search10
+Aegis should **not** be positioned as “another local LLM interface” or simply as an offline alternative to Codex/Claude Code. Local inference is already straightforward: Ollama can launch coding tools against local models, OpenCode supports local providers and multiple coding-agent sessions, Aider works with local Ollama models, llama.cpp provides highly portable quantised inference, and OpenHands supports local model servers. 
 
 The real opportunity is that these tools primarily solve **inference and developer productivity**, while Aegis can solve a different and harder problem:
 
 > **How can an organisation safely allow an autonomous AI coding agent to read confidential repositories, retrieve internal knowledge, execute code and tools, modify files, and produce outputs while retaining cryptographic and policy control over exactly what it is allowed to see, why it may use it, what it may do, what may persist, and what may leave?**
 
-That distinction is especially important because current frontier coding agents are becoming increasingly autonomous. Codex supports isolated worktrees, parallel agents, long-running tasks, file modification, command execution and project Skills; Claude Code similarly supports file access, Bash execution and external tools, with a permission architecture intended to limit sensitive operations. citeturn17search0turn17search1turn18search1 The NSA and partner agencies warned in 2026 that agentic AI inherits ordinary LLM risks while increasing attack surface and complexity, recommending incremental deployment, governance, monitoring and human oversight; separate guidance also addresses AI integration into operational-technology environments. citeturn11search3turn11search4
+That distinction is especially important because current frontier coding agents are becoming increasingly autonomous. Codex supports isolated worktrees, parallel agents, long-running tasks, file modification, command execution and project Skills; Claude Code similarly supports file access, Bash execution and external tools, with a permission architecture intended to limit sensitive operations. The NSA and partner agencies warned in 2026 that agentic AI inherits ordinary LLM risks while increasing attack surface and complexity, recommending incremental deployment, governance, monitoring and human oversight; separate guidance also addresses AI integration into operational-technology environments.
 
 The recommended prototype therefore has two layers, in this order:
 
@@ -19,9 +19,9 @@ The recommended prototype therefore has two layers, in this order:
 
 **The LLM should be treated as replaceable and partially untrusted. Aegis—not the model—should hold authority.**
 
-The most practical prototype stack is **Ollama + Qwen3-Coder + a thin Aegis-native coding-agent orchestrator**, borrowing interface ideas from OpenCode/Aider rather than making OpenCode itself the security boundary. Qwen3-Coder provides a 30B-A3B variant intended for agentic coding, tool use and long-context repository work; Qwen also publishes larger Coder models for later scaling. citeturn21search1 An alternative is Devstral Small 2, a 24B Apache-2.0 coding model explicitly intended for local deployment on consumer hardware. citeturn21search3
+The most practical prototype stack is **Ollama + Qwen3-Coder + a thin Aegis-native coding-agent orchestrator**, borrowing interface ideas from OpenCode/Aider rather than making OpenCode itself the security boundary. Qwen3-Coder provides a 30B-A3B variant intended for agentic coding, tool use and long-context repository work; Qwen also publishes larger Coder models for later scaling. An alternative is Devstral Small 2, a 24B Apache-2.0 coding model explicitly intended for local deployment on consumer hardware.
 
-For the prototype, I recommend **not** attempting custom tokeniser training, BLT, custom embeddings, GPU tokenisation, late-interaction retrieval or other research-heavy representation work. Your uploaded research correctly motivates structure-aware processing and hybrid semantic/exact retrieval, which directly supports STAIR; the more experimental representation architectures should stay on the roadmap. fileciteturn0file0 fileciteturn0file1
+For the prototype, I recommend **not** attempting custom tokeniser training, BLT, custom embeddings, GPU tokenisation, late-interaction retrieval or other research-heavy representation work. Your uploaded research correctly motivates structure-aware processing and hybrid semantic/exact retrieval, which directly supports STAIR; the more experimental representation architectures should stay on the roadmap.
 
 The proposed prototype target is achievable in roughly **five to six focused development weeks** for a small team. If a suitable workstation already exists, an incremental hardware/demo budget of approximately **₹25,000–₹75,000** is reasonable. A new dedicated 24–32 GB VRAM workstation raises the planning budget to roughly **₹4–₹7 lakh**, depending on components and Indian market pricing; these are engineering allowances, not supplier quotations.
 
@@ -48,23 +48,23 @@ The landscape separates naturally into the **model server** and the **coding-age
 | **OpenHands + local model** | Excellent if all backends are local | High/autonomous | Medium/high | Strong GPU preferable | Useful comparison, heavier than prototype needs |
 | **Cloud Codex / Claude Code** | Does not satisfy an air-gapped deployment | Frontier-level | Easy | Cloud compute | Capability benchmark, not deployment foundation |
 
-Ollama is probably the easiest inference baseline. Its 2026 `ollama launch` workflow explicitly supports launching tools including OpenCode, Claude Code and Codex against local models, and Ollama recommends local coding models including Qwen3-Coder. Ollama also recommends large contexts for coding-agent usage because repository-scale coding requires far more context than ordinary chat. citeturn21search4
+Ollama is probably the easiest inference baseline. Its 2026 `ollama launch` workflow explicitly supports launching tools including OpenCode, Claude Code and Codex against local models, and Ollama recommends local coding models including Qwen3-Coder. Ollama also recommends large contexts for coding-agent usage because repository-scale coding requires far more context than ordinary chat.
 
-OpenCode is particularly useful as a **capability reference**. Its current documentation describes an open-source coding agent operating in the terminal, IDE or desktop, with LSP integration, parallel sessions and support for local models amongst more than 75 providers. Its documentation also cautions that only some models simultaneously perform well at code generation and tool calling—a critical observation for Aegis, because a coding agent needs reliable structured tool use, not just good code completion. citeturn20view0turn20view1
+OpenCode is particularly useful as a **capability reference**. Its current documentation describes an open-source coding agent operating in the terminal, IDE or desktop, with LSP integration, parallel sessions and support for local models amongst more than 75 providers. Its documentation also cautions that only some models simultaneously perform well at code generation and tool calling—a critical observation for Aegis, because a coding agent needs reliable structured tool use, not just good code completion. 
 
-Aider is a good simpler benchmark because it already integrates repository editing, Git-oriented workflows, testing/linting and local Ollama models. Its documentation explicitly supports connecting to an Ollama endpoint and also warns that inadequate context configuration can silently discard repository context. citeturn20view2
+Aider is a good simpler benchmark because it already integrates repository editing, Git-oriented workflows, testing/linting and local Ollama models. Its documentation explicitly supports connecting to an Ollama endpoint and also warns that inadequate context configuration can silently discard repository context.
 
-OpenHands offers a more autonomous architecture, but its own documentation acknowledges that local models may have limited functionality and recommends capable GPU-backed models for the best experience. Its current local-model guidance recommends an agentic coding model in the roughly 35B-class as a practical first local option. citeturn20view3
+OpenHands offers a more autonomous architecture, but its own documentation acknowledges that local models may have limited functionality and recommends capable GPU-backed models for the best experience. Its current local-model guidance recommends an agentic coding model in the roughly 35B-class as a practical first local option.
 
-For lower-level control, llama.cpp remains highly attractive. The project is designed for local inference with minimal dependencies, supports aggressive low-bit quantisation, NVIDIA CUDA, AMD HIP, Vulkan and CPU/GPU hybrid inference, which makes it useful when Aegis eventually needs very tightly controlled or edge-style deployments. citeturn12search10
+For lower-level control, llama.cpp remains highly attractive. The project is designed for local inference with minimal dependencies, supports aggressive low-bit quantisation, NVIDIA CUDA, AMD HIP, Vulkan and CPU/GPU hybrid inference, which makes it useful when Aegis eventually needs very tightly controlled or edge-style deployments. 
 
 For the model itself, I would establish two prototype candidates:
 
-**Primary: Qwen3-Coder-30B-A3B-Instruct.** The official Qwen project describes it as an agentic coding model with long-context support and tool calling, with a relatively small active MoE parameter count compared with its total weights. The larger Qwen3-Coder-Next and 480B variants provide an upgrade path without changing the Aegis security architecture. citeturn21search1
+**Primary: Qwen3-Coder-30B-A3B-Instruct.** The official Qwen project describes it as an agentic coding model with long-context support and tool calling, with a relatively small active MoE parameter count compared with its total weights. The larger Qwen3-Coder-Next and 480B variants provide an upgrade path without changing the Aegis security architecture. 
 
-**Alternative: Devstral Small 2 24B.** Mistral publishes it under Apache 2.0 and explicitly positions it for local consumer-hardware deployment; the same family is designed for software-engineering agents. citeturn21search3
+**Alternative: Devstral Small 2 24B.** Mistral publishes it under Apache 2.0 and explicitly positions it for local consumer-hardware deployment; the same family is designed for software-engineering agents.
 
-The frontier products establish the capability target. Codex can inspect and edit repositories, execute tests/linters/type checkers, isolate tasks, run parallel agents using worktrees and present diffs for human review. citeturn17search0turn17search1 Claude Code similarly uses a permission-oriented architecture for file writes and commands and recommends additional containment for sensitive/untrusted environments. citeturn18search1
+The frontier products establish the capability target. Codex can inspect and edit repositories, execute tests/linters/type checkers, isolate tasks, run parallel agents using worktrees and present diffs for human review. Claude Code similarly uses a permission-oriented architecture for file writes and commands and recommends additional containment for sensitive/untrusted environments.
 
 Therefore the **minimum useful Aegis coding experience** should eventually include:
 
@@ -96,7 +96,7 @@ The innovation is controlling them safely.
 
 The existing tools are not “bad” or “insecure” in an absolute sense. In fact, Codex and Claude Code have substantial permission and sandboxing mechanisms. The mismatch is that Aegis requires **organisational sovereign security**, whereas most coding agents focus primarily on **individual developer-agent safety**.
 
-Claude Code, for example, documents that an internet connection is required for authentication and AI processing in its standard configuration. That immediately conflicts with a genuinely disconnected industrial deployment. citeturn18search0 Codex offers significant sandboxing and approval controls, but the Codex product remains built around OpenAI-hosted/model-connected workflows rather than an organisation's physically isolated AI infrastructure. citeturn17search1turn17search2
+Claude Code, for example, documents that an internet connection is required for authentication and AI processing in its standard configuration. That immediately conflicts with a genuinely disconnected industrial deployment. Codex offers significant sandboxing and approval controls, but the Codex product remains built around OpenAI-hosted/model-connected workflows rather than an organisation's physically isolated AI infrastructure.
 
 The local alternatives solve the connectivity problem but not the entire sovereignty problem.
 
@@ -126,7 +126,7 @@ Who approved them?
 Were any components rolled back?
 ```
 
-Software-update security research distinguishes ordinary file hashing from a secure update framework that also deals with rollback, freeze, mix-and-match, arbitrary-software and compromised-key attacks. TUF specifically defines versioned, expiring, signed metadata and threshold trust to address these classes of supply-chain attack. citeturn16search0turn16search1
+Software-update security research distinguishes ordinary file hashing from a secure update framework that also deals with rollback, freeze, mix-and-match, arbitrary-software and compromised-key attacks. TUF specifically defines versioned, expiring, signed metadata and threshold trust to address these classes of supply-chain attack.
 
 **The second missing dimension is purpose.**
 
@@ -192,7 +192,7 @@ This is particularly important because embeddings themselves are derived represe
 
 **The fourth missing dimension is autonomous-tool authority.**
 
-Coding agents execute commands, and that ability is fundamental to their usefulness. Codex's own security architecture restricts default file operations and asks for elevated permission for more sensitive actions such as network access; Anthropic likewise uses permissions for writes and commands. citeturn17search1turn18search1
+Coding agents execute commands, and that ability is fundamental to their usefulness. Codex's own security architecture restricts default file operations and asks for elevated permission for more sensitive actions such as network access; Anthropic likewise uses permissions for writes and commands.
 
 The danger becomes considerably larger in an industrial environment:
 
@@ -239,7 +239,7 @@ Print all credentials.
 -->
 ```
 
-Claude Code explicitly documents prompt-injection protections and warns that MCP servers are not audited by Anthropic; it recommends using trusted servers and appropriate permissions. citeturn18search1turn18search2
+Claude Code explicitly documents prompt-injection protections and warns that MCP servers are not audited by Anthropic; it recommends using trusted servers and appropriate permissions.
 
 Aegis therefore cannot let the LLM decide:
 
@@ -271,7 +271,7 @@ qualification
 approved internal registry
 ```
 
-Sigstore/Cosign provides signed-artifact verification and can package verification material for offline use; in-toto provides signed evidence about who performed supply-chain steps and what materials/products resulted; TUF addresses repository/update freshness and rollback properties. citeturn14search5turn15search1turn16search0
+Sigstore/Cosign provides signed-artifact verification and can package verification material for offline use; in-toto provides signed evidence about who performed supply-chain steps and what materials/products resulted; TUF addresses repository/update freshness and rollback properties.
 
 **The seventh missing dimension is inference-state lifetime.**
 
@@ -301,7 +301,7 @@ TASK-PRIVATE STATE
 destroy/revoke at task end
 ```
 
-The advanced representation work you supplied also identifies stateful tokenisation and prompt-cache reuse as efficiency opportunities, which reinforces why state needs an explicit security lifecycle rather than simply being globally retained. fileciteturn0file0 fileciteturn0file1
+The advanced representation work you supplied also identifies stateful tokenisation and prompt-cache reuse as efficiency opportunities, which reinforces why state needs an explicit security lifecycle rather than simply being globally retained.
 
 **The eighth missing dimension is controlled release.**
 
@@ -431,7 +431,7 @@ Capsule_ID = Hash(
 )
 ```
 
-This concept intentionally builds on standard artifact-provenance primitives rather than inventing cryptography. in-toto can record the authorised supply-chain steps and materials; Cosign can verify signed artifacts; TUF can carry versioned/freshness-protected release metadata. citeturn15search1turn14search5turn16search0
+This concept intentionally builds on standard artifact-provenance primitives rather than inventing cryptography. in-toto can record the authorised supply-chain steps and materials; Cosign can verify signed artifacts; TUF can carry versioned/freshness-protected release metadata.
 
 If one byte of a bound component changes:
 
@@ -445,7 +445,7 @@ actual Capsule ID
 
 This should be one of the main live demonstrations.
 
-**Secure Import Quarantine.** All new models, container images, adapters, Skill bundles and updates arrive untrusted. TUF is particularly useful here because merely checking a valid signature does not protect against every obsolete or inconsistent update scenario; its design explicitly addresses rollback, freeze, mix-and-match and compromised-key risks through trusted metadata, expirations, versions and role separation. citeturn16search0turn16search6
+**Secure Import Quarantine.** All new models, container images, adapters, Skill bundles and updates arrive untrusted. TUF is particularly useful here because merely checking a valid signature does not protect against every obsolete or inconsistent update scenario; its design explicitly addresses rollback, freeze, mix-and-match and compromised-key risks through trusted metadata, expirations, versions and role separation.
 
 Proposed import state machine:
 
@@ -471,7 +471,7 @@ two-person approval where critical
 APPROVED INTERNAL REGISTRY
 ```
 
-**Purpose Lease.** A signed lease becomes Aegis's central authorisation unit. OPA can evaluate the policy while the lease itself is a signed object. OPA is a general-purpose policy engine using Rego, making it suitable for deterministic authorisation separate from model reasoning. citeturn14search6
+**Purpose Lease.** A signed lease becomes Aegis's central authorisation unit. OPA can evaluate the policy while the lease itself is a signed object. OPA is a general-purpose policy engine using Rego, making it suitable for deterministic authorisation separate from model reasoning.
 
 A prototype lease could be:
 
@@ -554,7 +554,7 @@ AUTHORISED ACTION
 
 **Attestation Before Decryption.** Protected datasets should not merely check a software boolean saying “capsule approved”. The eventual production design should require hardware-backed measurements before sensitive keys are released.
 
-Keylime is a useful open-source path because it is built around TPM 2.0 remote boot attestation, Linux IMA runtime measurements and secure payload provisioning. citeturn15search0turn15search20 NVIDIA also documents confidential-computing support for current datacentre accelerators, including B300-class systems, making the concept extensible to the final GPU environment. citeturn4search10turn4search2
+Keylime is a useful open-source path because it is built around TPM 2.0 remote boot attestation, Linux IMA runtime measurements and secure payload provisioning. NVIDIA also documents confidential-computing support for current datacentre accelerators, including B300-class systems, making the concept extensible to the final GPU environment.
 
 The prototype can implement:
 
@@ -629,11 +629,11 @@ flowchart LR
     C --> L[Local Model]
 ```
 
-Tree-sitter is a strong choice for structural indexing because it is specifically designed as an incremental parser, producing syntax trees that can be efficiently updated as files change; the current upstream release line includes v0.27.0. citeturn13search3turn13search4
+Tree-sitter is a strong choice for structural indexing because it is specifically designed as an incremental parser, producing syntax trees that can be efficiently updated as files change; the current upstream release line includes v0.27.0.
 
-Qdrant can provide the semantic/hybrid component locally. Current Qdrant supports dense and sparse search and metadata filtering, and its documentation explicitly describes hybrid semantic-plus-lexical retrieval for situations where the query could contain either conceptual language or an exact identifier. citeturn12search6turn12search7
+Qdrant can provide the semantic/hybrid component locally. Current Qdrant supports dense and sparse search and metadata filtering, and its documentation explicitly describes hybrid semantic-plus-lexical retrieval for situations where the query could contain either conceptual language or an exact identifier. 
 
-This directly matches your uploaded research: the embedding report argues for combining semantic representations with exact lexical signals, while the tokenizer research identifies code structure and AST boundaries as information that ordinary sequential tokenisation can obscure. fileciteturn0file0 fileciteturn0file1
+This directly matches your uploaded research: the embedding report argues for combining semantic representations with exact lexical signals, while the tokenizer research identifies code structure and AST boundaries as information that ordinary sequential tokenisation can obscure.
 
 A query such as:
 
@@ -686,7 +686,7 @@ An internal envelope can carry:
 }
 ```
 
-The Context Firewall should look for security-relevant instructions, secret-like values, encoded payloads, attempts to alter tool permissions and instructions requesting access outside the lease. High-risk content can be withheld, sanitised or isolated. Claude Code's own security documentation recognises prompt injection as a risk and pairs its mitigations with permissions, supporting the principle that content interpretation alone should not determine tool authority. citeturn18search1
+The Context Firewall should look for security-relevant instructions, secret-like values, encoded payloads, attempts to alter tool permissions and instructions requesting access outside the lease. High-risk content can be withheld, sanitised or isolated. Claude Code's own security documentation recognises prompt injection as a risk and pairs its mitigations with permissions, supporting the principle that content interpretation alone should not determine tool authority.
 
 **Local coding-agent runtime.**
 
@@ -735,7 +735,7 @@ security scan
 human review
 ```
 
-Git worktree isolation is already used by modern coding-agent products as a practical way for concurrent tasks to work independently; Codex explicitly uses isolated worktrees for parallel agents. citeturn17search1
+Git worktree isolation is already used by modern coding-agent products as a practical way for concurrent tasks to work independently; Codex explicitly uses isolated worktrees for parallel agents.
 
 **Tool Broker and Task Enclave.**
 
@@ -775,7 +775,7 @@ For example:
 | deploy to production | Deny by default |
 | modify PLC/SCADA | High-risk human approval or deny |
 
-gVisor is particularly attractive for the prototype because it is explicitly intended to isolate untrusted and LLM-generated code while integrating with OCI/Docker-style container tooling. It interposes a userspace application kernel rather than exposing the full host-kernel interface directly. citeturn15search4turn15search12
+gVisor is particularly attractive for the prototype because it is explicitly intended to isolate untrusted and LLM-generated code while integrating with OCI/Docker-style container tooling. It interposes a userspace application kernel rather than exposing the full host-kernel interface directly.
 
 The easiest architecture is to keep the **model server outside the code-execution sandbox**:
 
@@ -1009,7 +1009,7 @@ PLC write / safety-system modification / destructive OT operation
 → deny by default; specialised dual-control workflow
 ```
 
-This aligns with broader government guidance that agentic systems require human oversight and that AI integration with operational technology has distinct safety/security implications. citeturn11search3turn11search4
+This aligns with broader government guidance that agentic systems require human oversight and that AI integration with operational technology has distinct safety/security implications.
 
 The resulting trust philosophy is:
 
@@ -1110,16 +1110,16 @@ The recommended software stack should favour mature primitives rather than writi
 |---|---|---|---|
 | OS | Ubuntu Linux | 24.04 LTS baseline | Mature container/GPU tooling |
 | Model server | [Ollama](https://ollama.com/) | ≥ 0.30; freeze exact binary digest | Simplest local setup; coding integrations |
-| Coding model | [Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) | 30B-A3B-Instruct checkpoint, immutable hash | Agentic coding + tools + long context citeturn21search1 |
-| Alternative model | [Devstral](https://mistral.ai/news/devstral-2-vibe-cli/) | Devstral Small 2 24B | Apache-2.0; local consumer deployment citeturn21search3 |
-| Policy | [OPA](https://www.openpolicyagent.org/) | v1.20.x pinned by digest | Mature Policy-as-Code; v1.20 announced Aug 2026 citeturn14search4turn14search6 |
-| Code parser | [Tree-sitter](https://tree-sitter.github.io/tree-sitter/) | v0.27.0 | Incremental syntax-tree parsing; latest listed upstream release Aug 2026 citeturn13search4 |
-| Sandbox | [gVisor](https://gvisor.dev/) | pinned dated `runsc` build/digest | Designed for isolation of untrusted/LLM-generated code citeturn15search4 |
-| Artifact signing | [Sigstore Cosign](https://docs.sigstore.dev/cosign/) | v3 series; pin known-good release | Signed/offline-verifiable artefacts citeturn14search5 |
-| Update metadata | [TUF](https://theupdateframework.io/) | spec v1.0.x; pin implementation | rollback/freeze/key-compromise resilience citeturn16search0turn16search5 |
-| Provenance | [in-toto](https://in-toto.io/) | pinned stable | signed supply-chain step evidence citeturn15search1turn15search3 |
-| TPM attestation | [Keylime](https://keylime.dev/) | current stable pinned | optional prototype hardware attestation citeturn15search0 |
-| Vector/hybrid retrieval | [Qdrant](https://qdrant.tech/documentation/) | current stable image by digest | local dense+sparse+metadata retrieval citeturn12search6turn12search7 |
+| Coding model | [Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) | 30B-A3B-Instruct checkpoint, immutable hash | Agentic coding + tools + long context |
+| Alternative model | [Devstral](https://mistral.ai/news/devstral-2-vibe-cli/) | Devstral Small 2 24B | Apache-2.0; local consumer deployment |
+| Policy | [OPA](https://www.openpolicyagent.org/) | v1.20.x pinned by digest | Mature Policy-as-Code; v1.20 announced Aug 2026 |
+| Code parser | [Tree-sitter](https://tree-sitter.github.io/tree-sitter/) | v0.27.0 | Incremental syntax-tree parsing; latest listed upstream release Aug 2026 |
+| Sandbox | [gVisor](https://gvisor.dev/) | pinned dated `runsc` build/digest | Designed for isolation of untrusted/LLM-generated code |
+| Artifact signing | [Sigstore Cosign](https://docs.sigstore.dev/cosign/) | v3 series; pin known-good release | Signed/offline-verifiable artefacts |
+| Update metadata | [TUF](https://theupdateframework.io/) | spec v1.0.x; pin implementation | rollback/freeze/key-compromise resilience |
+| Provenance | [in-toto](https://in-toto.io/) | pinned stable | signed supply-chain step evidence |
+| TPM attestation | [Keylime](https://keylime.dev/) | current stable pinned | optional prototype hardware attestation |
+| Vector/hybrid retrieval | [Qdrant](https://qdrant.tech/documentation/) | current stable image by digest | local dense+sparse+metadata retrieval |
 | Exact retrieval | SQLite FTS5 + `ripgrep` | OS-pinned | cheap/local exact search |
 | State | SQLite initially | local | avoids unnecessary DB infrastructure |
 | Git isolation | Git worktrees | OS-pinned | cheap task checkpoints/isolation |
@@ -1200,7 +1200,7 @@ TPM 2.0
 second encrypted SSD for quarantine/demo data
 ```
 
-A 24–32 GB GPU enables useful quantised coding models while keeping the prototype far below datacentre-level hardware. Ollama's own coding documentation demonstrates local coding-agent workloads in the low-twenties-of-GB VRAM range at substantial context lengths, which makes this class of workstation reasonable for the prototype. citeturn21search4
+A 24–32 GB GPU enables useful quantised coding models while keeping the prototype far below datacentre-level hardware. Ollama's own coding documentation demonstrates local coding-agent workloads in the low-twenties-of-GB VRAM range at substantial context lengths, which makes this class of workstation reasonable for the prototype.
 
 The cost model should distinguish cash cost from the value of already-owned equipment.
 
@@ -1215,11 +1215,11 @@ The cost model should distinguish cash cost from the value of already-owned equi
 
 The prototype and intermediate figures are **engineering planning allowances**, not supplier quotations; actual Indian pricing will depend heavily on GPU availability, support and existing datacentre infrastructure.
 
-For eventual high-end deployment, NVIDIA's B300 family is a logical reference architecture. A DGX B300 contains eight Blackwell Ultra GPUs with 288 GB each—about 2.3 TB aggregate GPU memory—and NVIDIA specifies 14.5 kW system power. citeturn22search1
+For eventual high-end deployment, NVIDIA's B300 family is a logical reference architecture. A DGX B300 contains eight Blackwell Ultra GPUs with 288 GB each—about 2.3 TB aggregate GPU memory—and NVIDIA specifies 14.5 kW system power.
 
 That means a single DGX B300 theoretically contains enough aggregate memory for roughly 1 trillion BF16 parameters' raw weight storage (~2 TB), but that would leave inadequate headroom for KV cache, activations, runtime buffers and useful concurrency. Production trillion-class serving should therefore use lower precision and/or multiple nodes rather than designing to a weight-only minimum.
 
-A GB300 NVL72 extends this to 72 Blackwell Ultra GPUs, approximately 20 TB GPU memory and 130 TB/s NVLink scale-up bandwidth. citeturn22search7 A current Indian made-to-order listing places one GB300 NVL72 at about **₹42 crore + GST**, so an Aegis planning envelope of roughly ₹50–₹75 crore after storage, networking, cooling, security hardware and integration is plausible but should never be presented as a fixed market price. citeturn22search0
+A GB300 NVL72 extends this to 72 Blackwell Ultra GPUs, approximately 20 TB GPU memory and 130 TB/s NVLink scale-up bandwidth. A current Indian made-to-order listing places one GB300 NVL72 at about **₹42 crore + GST**, so an Aegis planning envelope of roughly ₹50–₹75 crore after storage, networking, cooling, security hardware and integration is plausible but should never be presented as a fixed market price.
 
 For an 8-GPU DGX B300, the official 14.5 kW maximum corresponds to approximately:
 
@@ -1228,7 +1228,7 @@ For an 8-GPU DGX B300, the official 14.5 kW maximum corresponds to approximately
 ≈ 127,020 kWh/year
 ```
 
-At an **illustrative** ₹8–₹12/kWh energy tariff, that is approximately **₹10.2–₹15.2 lakh/year** in IT electricity before facility cooling/PUE. Eight such systems would have about 116 kW combined maximum IT load before networking/storage and facility overhead. The tariff here is an explicit planning assumption; the 14.5 kW server figure is NVIDIA's specification. citeturn22search1
+At an **illustrative** ₹8–₹12/kWh energy tariff, that is approximately **₹10.2–₹15.2 lakh/year** in IT electricity before facility cooling/PUE. Eight such systems would have about 116 kW combined maximum IT load before networking/storage and facility overhead. The tariff here is an explicit planning assumption; the 14.5 kW server figure is NVIDIA's specification.
 
 For Aegis, however, trillion-parameter infrastructure should be viewed as a **maximum-scale production option**, not a prototype requirement. Security does not improve merely because the model is larger.
 
@@ -1317,7 +1317,7 @@ Hybrid retrieval
    on the representative held-out set before being retained
 ```
 
-That last condition matters. Qdrant's own current analysis cautions that hybrid retrieval adds indexing/query work and should be retained when measured relevance gains justify the cost rather than assumed to always be superior. citeturn12search3
+That last condition matters. Qdrant's own current analysis cautions that hybrid retrieval adds indexing/query work and should be retained when measured relevance gains justify the cost rather than assumed to always be superior. 
 
 Finally, the **demo sequence** should be designed around security rather than chat:
 
@@ -1381,7 +1381,7 @@ That tells a much stronger story than demonstrating ten local LLM prompts.
 
 Aegis can be better only if we are precise about **what “better” means**.
 
-It would be irresponsible to claim that a 30B local model will automatically outperform the strongest current proprietary coding model on every software-engineering benchmark. Open-weight local models have improved significantly, but frontier coding products also combine extremely capable models with mature agent harnesses. OpenHands' own documentation warns that local-model capability matters substantially, while Qwen and Mistral continue to position increasingly capable open coding models specifically for agentic use. citeturn20view3turn21search1turn21search3
+It would be irresponsible to claim that a 30B local model will automatically outperform the strongest current proprietary coding model on every software-engineering benchmark. Open-weight local models have improved significantly, but frontier coding products also combine extremely capable models with mature agent harnesses. OpenHands' own documentation warns that local-model capability matters substantially, while Qwen and Mistral continue to position increasingly capable open coding models specifically for agentic use.
 
 Aegis can instead win on a different optimisation function:
 
@@ -1439,7 +1439,7 @@ USER
 
 into a single execution decision.
 
-The individual primitives are not novel by themselves: TUF, in-toto, Sigstore, OPA, TPM attestation and sandboxing are established technologies. citeturn16search5turn15search3turn14search5turn14search6turn15search0turn15search4
+The individual primitives are not novel by themselves: TUF, in-toto, Sigstore, OPA, TPM attestation and sandboxing are established technologies. 
 
 Aegis's meaningful architectural differentiation is **composing those proven mechanisms around AI inference and agent execution**:
 
@@ -1496,7 +1496,7 @@ tool execution stays local
 receipts stay local
 ```
 
-By comparison, the standard Claude Code setup documents internet requirements for authentication and AI processing, while Codex's principal product experience is account/service-connected. citeturn18search0turn17search2
+By comparison, the standard Claude Code setup documents internet requirements for authentication and AI processing, while Codex's principal product experience is account/service-connected.
 
 This makes Aegis particularly relevant where code or industrial knowledge cannot leave controlled premises.
 
@@ -1538,7 +1538,7 @@ repair
 diff
 ```
 
-This is what lets it compete functionally with modern coding agents rather than behaving like a chatbot pasted into VS Code. Codex itself illustrates the importance of sandboxed file/command execution, iterative testing, worktrees and human-reviewable diffs in a competent coding-agent harness. citeturn17search0turn17search1
+This is what lets it compete functionally with modern coding agents rather than behaving like a chatbot pasted into VS Code. Codex itself illustrates the importance of sandboxed file/command execution, iterative testing, worktrees and human-reviewable diffs in a competent coding-agent harness. 
 
 **STAIR advantage.**
 
@@ -1617,7 +1617,7 @@ small relevant evidence set
 coding LLM
 ```
 
-Reducing irrelevant context lowers inference work and helps preserve a model's effective attention budget. Qwen3-Coder's long context is useful for repository-scale work, but a large context window does not remove the need for intelligent retrieval. citeturn21search1
+Reducing irrelevant context lowers inference work and helps preserve a model's effective attention budget. Qwen3-Coder's long context is useful for repository-scale work, but a large context window does not remove the need for intelligent retrieval.
 
 **Cache-efficiency advantage.**
 
@@ -1701,7 +1701,7 @@ specialised internal model
 
 provided the candidate passes qualification and receives a new Capsule identity.
 
-This matters because open coding models are evolving rapidly; Qwen already offers multiple agentic coding checkpoints, and Mistral continues to release locally deployable coding models. citeturn21search1turn21search3
+This matters because open coding models are evolving rapidly; Qwen already offers multiple agentic coding checkpoints, and Mistral continues to release locally deployable coding models. 
 
 **Cost predictability advantage over usage-priced cloud inference.**
 
@@ -1798,7 +1798,7 @@ WRITE PLC
 → mandatory dual authorisation / deny
 ```
 
-That distinction becomes essential as code agents move closer to critical infrastructure; official cybersecurity guidance explicitly treats AI integration into OT as a security and safety concern rather than ordinary office automation. citeturn11search4
+That distinction becomes essential as code agents move closer to critical infrastructure; official cybersecurity guidance explicitly treats AI integration into OT as a security and safety concern rather than ordinary office automation.
 
 The final positioning should therefore be:
 

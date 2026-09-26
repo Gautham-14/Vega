@@ -1,7 +1,7 @@
 """The governed prototype pipeline. Mock inference only sees disclosed context."""
 import time
 from aegis.control import artifacts, capsules, leases, packages
-from aegis.control.store import Denied, put, require, receipt, uid, digest, event
+from aegis.control.store import Denied, LOCK, put, require, receipt, uid, digest, event
 from aegis.control.policy import actor, authorize_label, classify, label, approved, SKILLS, tool_guard, LEVELS, POLICY_VERSION
 from aegis.control.data import Workspace, disclose, context_check, tripwire
 from aegis.control.retrieval import HybridRetrieval, verify_claim
@@ -104,6 +104,7 @@ class GovernedRunner:
             # Recheck the measured stack immediately before crossing the adapter boundary.
             capsules.attest(task["capsule_id"], capsules.active_components(packages.executable(task["package_id"], task["skill"]), task["skill"]), POLICY_STATE)
             draft = self.infer([{"id": source["id"], "revision": source["revision"]} for source in selected], disclosed)
+            leases.validate(request["lease_id"], **lease_args)
             tripwire("\n".join(c["text"] for c in draft), flow_label["compartments"])
             claims = [verify_claim(c, selected, disclosed) for c in draft]
             accepted = [c for c in claims if c["state"] in {"VERIFIED", "SUPPORTED"}]
@@ -140,8 +141,12 @@ class GovernedRunner:
             step("MEMORY_HYGIENE", **task["hygiene"])
         if task["status"] == "COMPLETED" and payload:
             try:
-                retained = artifacts.retain(task, payload, min(lease["expires_at"], time.time() + 900))
-                task["artifact_id"] = retained["id"]
+                with LOCK:
+                    leases.validate(request["lease_id"], **lease_args)
+                    retained = artifacts.retain(task, payload, min(lease["expires_at"], time.time() + 900))
+                    task["artifact_id"] = retained["id"]
+            except Denied as error:
+                task.update(status="BLOCKED", reason=error.code, event_id=error.event_id)
             except Exception as error:
                 task.update(status="FAILED", reason=type(error).__name__)
                 event("ARTIFACT_RETENTION_FAILURE", task_id)

@@ -38,7 +38,7 @@ const App = {
   reset() {
     this.epoch += 1; this.identity = null; this.lastSample = null;
     clearTimeout(this.timer); this.timer = null; this.loading = false;
-    for (const id of ['dashboard','signin','demo-mode','session-identity','logout','refresh','events-panel','hosted-preview']) this.show(id, false);
+    for (const id of ['dashboard','signin','demo-mode','session-identity','logout','refresh','events-panel']) this.show(id, false);
     for (const id of ['tasks-body','approvals-body','receipts-body','events-body']) document.getElementById(id).replaceChildren();
     for (const id of ['task-count','approval-count','receipt-count','chain-status','cpu-value','memory-value','disk-value','process-value','history-start','history-end']) this.text(id, '—');
     for (const id of ['cpu-line','memory-line']) document.getElementById(id).setAttribute('points', '');
@@ -50,11 +50,6 @@ const App = {
     this.reset(); this.demo = false; const epoch = this.epoch;
     this.status('Connecting');
     try {
-      const health = await this.request('/health');
-      if (epoch !== this.epoch) return;
-      if (health.deployment_mode === 'HOSTED_PREVIEW') {
-        this.show('hosted-preview', true); this.status('Hosted preview'); return;
-      }
       const setup = await this.request('/api/auth/status');
       if (epoch !== this.epoch) return;
       this.demo = setup.demo === true;

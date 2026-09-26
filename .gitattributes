@@ -1,0 +1,4 @@
+/run_all.sh text eol=lf
+/Aegis.command text eol=lf
+/run_all.bat text eol=crlf
+/Aegis.bat text eol=crlf

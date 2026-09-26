@@ -81,6 +81,21 @@ def test_profiles_require_custodian_and_are_sealed(storage):
     assert exc.value.code == "PROVIDER_INTEGRITY_FAILURE"
 
 
+def test_unverified_live_provider_cannot_receive_internal_repository(storage):
+    from aegis.control import capsules, policy
+    provider = registered()
+    stack = service.register_capsule(provider["id"], "operator")
+    for actor in ("model-custodian", "security-officer"):
+        policy.decide(stack["approval"]["id"], actor, "APPROVE")
+    capsules.approve(stack["capsule"]["id"], stack["approval"]["id"], "model-custodian")
+    internal = service.add_repository("private", {"main.py": "secret = 1\n"}, "Engineering", "INTERNAL", "data-owner")
+    with pytest.raises(store.Denied) as error:
+        service.issue_lease(internal["id"], stack["capsule"]["id"], "operator", "PLAN", 15, False, "data-owner")
+    assert error.value.code == "MODEL_ASSURANCE_REQUIRED"
+    public = service.add_repository("public", {"main.py": "x = 1\n"}, "Engineering", "PUBLIC", "data-owner")
+    assert service.issue_lease(public["id"], stack["capsule"]["id"], "operator", "PLAN", 15, False, "data-owner")["label"]["classification"] == "PUBLIC"
+
+
 def connection_for(body, status=200):
     connection = MagicMock()
     connection.getresponse.return_value.status = status

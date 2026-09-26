@@ -1,7 +1,7 @@
 """
 Aegis Sovereign AI Runtime - Hardware API Route
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from typing import Dict, Any, List
 from aegis.hardware.detector import detect_hardware
 from aegis.hardware.simulation import (
@@ -14,6 +14,12 @@ from aegis.api.demo import require_demo_mode
 import os
 
 router = APIRouter(prefix="/api/hardware", tags=["Hardware"])
+
+
+@router.get("/capacity")
+def model_capacity(parameters_billions: float = Query(gt=0, le=100000, allow_inf_nan=False), bits: int = 4):
+    from aegis.hardware.capacity import estimate
+    return estimate(parameters_billions, bits)
 
 @router.get("")
 def get_hardware_telemetry() -> Dict[str, Any]:

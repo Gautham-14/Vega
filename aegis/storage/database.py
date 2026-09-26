@@ -7,12 +7,14 @@ import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from aegis.config import DB_PATH
+from aegis.security.private_files import no_links
 
 @contextmanager
 def get_db_connection():
     """Return a configured SQLite connection with row factory."""
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(no_links(DB_PATH)))
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA trusted_schema = OFF;")
     conn.execute("PRAGMA foreign_keys = ON;")
     try:
         with conn:

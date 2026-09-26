@@ -55,7 +55,7 @@ def test_demo_can_renew_approvals_that_expired_before_activation():
         policy.decide(identity, "security-officer", "APPROVE")
         request = store.require("approval", identity)
         request["expires_at"] = time.time() - 1
-        store.put("approval", identity, request)
+        policy._save_approval(request)  # trusted test fixture simulating elapsed time
     renewed = demo.prepare()
     assert not set(original) & set(renewed["approval_ids"])
     assert all(store.require("approval", identity)["status"] == "PENDING" for identity in renewed["approval_ids"])

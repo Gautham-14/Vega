@@ -100,7 +100,8 @@ def test_run_requires_current_owned_live_lease(tmp_path):
     session.value = {"actor": "operator", "selected_lease": {"id": "LEASE-1", "actor": "operator"}}
     client = cli.Client(session=session)
     client.call = Mock(side_effect=[{"id": "operator"}, {"id": "LEASE-1", "user": "operator", "mode": "PLAN",
-        "purpose": "code-planning", "expires_at": time.time() + 100}, {"status": "COMPLETED"}])
+        "purpose": "code-planning", "expires_at": time.time() + 100},
+        {"enabled": False, "generation": 0}, {"status": "COMPLETED"}])
     assert client.run("Plan change")["status"] == "COMPLETED"
     assert client.call.call_args.args == ("/coding/tasks", "POST", {"lease_id": "LEASE-1", "prompt": "Plan change", "purpose": "code-planning"})
     client.call = Mock(side_effect=[{"id": "operator"}, {"user": "finance-operator"}])

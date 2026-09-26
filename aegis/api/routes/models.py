@@ -31,6 +31,7 @@ def get_model(model_id: str) -> Dict[str, Any]:
 
 @router.post("/import")
 def import_manifest(req: ModelManifestImportRequest) -> Dict[str, Any]:
+    require_demo_mode()
     try:
         res = import_model_manifest(req.model_dump())
         return res

@@ -10,6 +10,8 @@ FIELDS = {"source_ids", "compartments", "purpose", "capsule_id", "skill", "user"
 
 def issue(spec, issuer):
     actor(issuer, ["Data Owner"])
+    from aegis.security import lockdown
+    generation = lockdown.check()
     if set(spec) != FIELDS:
         raise ValueError("Lease fields are incomplete or unknown")
     principal = actor(spec["user"])
@@ -32,7 +34,7 @@ def issue(spec, issuer):
     if compartments != set(spec["compartments"]):
         raise Denied("COMPARTMENT_VIOLATION", "Lease compartments must match its sources")
     actor(spec["recipient"])
-    value = {"id": uid("LEASE"), "issuer": issuer, "issued_at": time.time(), **spec}
+    value = {"id": uid("LEASE"), "issuer": issuer, "issued_at": time.time(), **spec, "lockdown_generation": generation}
     value["signature"] = sign(value, "purpose-lease")
     put("lease", value["id"], value)
     receipt("LEASE_ISSUED", issuer, lease_id=value["id"], user=spec["user"], purpose=spec["purpose"],
@@ -43,6 +45,8 @@ def issue(spec, issuer):
 def validate(lease_id, *, user, capsule_id, skill, purpose, source_ids, compartments, output_type,
              export=False, recipient=None, training=False, persistent_memory=False):
     value = require("lease", lease_id)
+    from aegis.security import lockdown
+    lockdown.check(value.get("lockdown_generation", 0))
     body = {k: v for k, v in value.items() if k != "signature"}
     if not hmac.compare_digest(value["signature"], sign(body, "purpose-lease")):
         raise Denied("INVALID_LEASE_SIGNATURE", "Purpose lease was modified", lease_id)

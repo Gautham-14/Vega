@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from aegis.coding import providers
 from aegis.control import policy
 from aegis.security.auth import principal
+from aegis.security.model_qualification import QualificationSuite, run_candidate_suite
 
 router = APIRouter(prefix="/api/providers", tags=["Local model providers"])
 
@@ -27,3 +28,8 @@ def profile(provider_id: str, identity=Depends(principal)):
 @router.post("/{provider_id}/probe")
 def probe(provider_id: str, identity=Depends(principal)):
     return providers.probe(provider_id, identity)
+
+
+@router.post("/{provider_id}/qualify")
+def qualify_candidate(provider_id: str, req: QualificationSuite, identity=Depends(principal)):
+    return run_candidate_suite(provider_id, req.model_dump(), identity)

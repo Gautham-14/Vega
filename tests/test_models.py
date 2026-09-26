@@ -77,11 +77,13 @@ def test_model_qualification():
 
     # Run qualification
     qual_res = run_simulated_qualification("QUALIFY-TEST-MODEL")
-    assert qual_res["new_status"] == "QUALIFIED"
+    assert qual_res["new_status"] == "DEMO_QUALIFIED"
+    assert qual_res["production_eligible"] is False
     assert qual_res["qualification_score"] >= 90.0
 
     model = get_model_by_id("QUALIFY-TEST-MODEL")
-    assert model["status"] == "QUALIFIED"
+    assert model["status"] == "DEMO_QUALIFIED"
+    assert model["artifact_integrity_verified"] is False
 
 def test_tampered_model_cannot_be_qualified():
     tampered_manifest = {
@@ -100,7 +102,7 @@ def test_tampered_model_cannot_be_qualified():
     assert import_res["integrity_verified"] is False
 
     # Attempting to qualify a corrupt package must be blocked
-    with pytest.raises(ValueError, match="Failed SHA-256 cryptographic integrity verification"):
+    with pytest.raises(ValueError, match="Manifest SHA-256 checksum mismatch"):
         run_simulated_qualification("TAMPERED-CANDIDATE-8B")
 
 def test_shadow_mode_simulation():

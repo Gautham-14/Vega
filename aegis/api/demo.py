@@ -8,3 +8,5 @@ from fastapi import HTTPException
 def require_demo_mode() -> None:
     if os.environ.get("AEGIS_ENABLE_DEMO_ENDPOINTS") != "1":
         raise HTTPException(status_code=404, detail="Demonstration endpoint is disabled")
+    from aegis.security import lockdown
+    lockdown.check()

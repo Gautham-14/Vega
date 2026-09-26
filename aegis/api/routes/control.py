@@ -174,26 +174,31 @@ def decision(approval_id: str, req: Decision, identity=Depends(principal)):
 
 @router.post("/packages/import")
 def import_package(req: ImportRequest, identity=Depends(principal)):
+    require_demo_mode()
     return packages.import_package(req.manifest, req.artifact, req.signature, identity, req.rollback_approval_id)
 
 
 @router.post("/packages/{package_id}/qualify")
 def qualify(package_id: str, identity=Depends(principal)):
+    require_demo_mode()
     return packages.qualify(package_id, identity)
 
 
 @router.post("/packages/{package_id}/shadow")
 def shadow(package_id: str, identity=Depends(principal)):
+    require_demo_mode()
     return packages.qualify(package_id, identity, shadow=True)
 
 
 @router.post("/packages/{package_id}/approve")
 def approve_package(package_id: str, req: ApprovalReference, identity=Depends(principal)):
+    require_demo_mode()
     return packages.approve_package(package_id, req.approval_id, identity)
 
 
 @router.get("/packages/{package_id}/compatibility")
 def hardware(package_id: str, identity=Depends(principal)):
+    require_demo_mode()
     from aegis.hardware.simulation import HARDWARE_PROFILES
     manifest = store.require("package", package_id)["manifest"]
     return {key: packages.compatibility(manifest, p["available_ram_mb"], p["gpu"]["vram_mb"])
@@ -202,6 +207,7 @@ def hardware(package_id: str, identity=Depends(principal)):
 
 @router.post("/sources")
 def source(req: SourceRequest, identity=Depends(principal)):
+    require_demo_mode()
     if sum(len(v) for v in req.fields.values()) > 1000000:
         raise HTTPException(413, "Source is too large")
     return data.add_source(req.model_dump(), identity)
@@ -209,16 +215,19 @@ def source(req: SourceRequest, identity=Depends(principal)):
 
 @router.post("/leases")
 def lease(req: LeaseRequest, identity=Depends(principal)):
+    require_demo_mode()
     return leases.issue(req.model_dump(), identity)
 
 
 @router.post("/tasks")
 def task(req: TaskRequest, identity=Depends(principal)):
+    require_demo_mode()
     return GovernedRunner().run(req.model_dump(), identity)
 
 
 @router.post("/tasks/classify")
 def classify_task(req: TaskRequest, identity=Depends(principal)):
+    require_demo_mode()
     sources = [store.require("source", source_id) for source_id in req.source_ids]
     for source in sources:
         policy.authorize_label(identity, policy.label([source]))
@@ -229,6 +238,7 @@ def classify_task(req: TaskRequest, identity=Depends(principal)):
 
 @router.post("/artifacts/{artifact_id}/export")
 def export(artifact_id: str, req: ExportRequest, identity=Depends(principal)):
+    require_demo_mode()
     return artifacts.export_artifact(artifact_id, identity, req.recipient, req.approval_id, req.restore)
 
 
@@ -277,17 +287,20 @@ def run_demo(req: Scenario, identity=Depends(principal)):
 
 @router.post("/self-test")
 def self_test(identity=Depends(principal)):
+    require_demo_mode()
     from aegis.control.self_test import run_self_test
     return run_self_test()
 
 
 @router.post("/policies/versions")
 def update_versions(req: VersionPolicy, identity=Depends(principal)):
+    require_demo_mode()
     from aegis.control.governance import version_policy
     return version_policy(req.family, req.minimum, req.revoked, req.approval_id, identity)
 
 
 @router.post("/learning/review")
 def learning(req: LearningPlan, identity=Depends(principal)):
+    require_demo_mode()
     from aegis.control.governance import learning_plan
     return learning_plan(req.model_dump(), identity)

@@ -4,6 +4,7 @@ Aegis Sovereign AI Runtime - Knowledge API Route
 from fastapi import APIRouter, HTTPException, Query
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
+from aegis.api.demo import require_demo_mode
 from aegis.knowledge.registry import (
     get_all_documents,
     get_document_by_id,
@@ -50,6 +51,8 @@ def get_doc(doc_id: str) -> Dict[str, Any]:
 
 @router.post("/upload")
 def upload_document(req: DocumentUploadRequest) -> Dict[str, Any]:
+    # This legacy store persists source text in plain SQLite columns.
+    require_demo_mode()
     try:
         doc_id = add_document(req.model_dump())
         return {"status": "SUCCESS", "document_id": doc_id}

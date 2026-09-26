@@ -21,7 +21,7 @@ def get_dashboard_status() -> Dict[str, Any]:
     """
     models = get_all_models()
     registered_count = len(models)
-    qualified_count = sum(1 for m in models if m["status"] == "QUALIFIED")
+    demo_qualified_count = sum(1 for m in models if m["status"] == "DEMO_QUALIFIED")
     quarantined_count = sum(1 for m in models if m["status"] == "QUARANTINED")
 
     hw = get_effective_hardware()
@@ -46,11 +46,13 @@ def get_dashboard_status() -> Dict[str, Any]:
         "gpu": gpu_status,
         "registered_models": registered_count,
         "registered_documents": len(get_all_documents()),
-        "qualified_models": qualified_count,
+        "qualified_models": 0,
+        "demo_qualified_models": demo_qualified_count,
         "quarantined_models": quarantined_count,
         "security_tests_status": security_tests_status,
-        "external_calls": 0,
-        "network_egress_bytes": 0,
+        "external_calls": None,
+        "network_egress_bytes": None,
+        "network_measurement_scope": "NOT_MEASURED",
         "hardware_telemetry": {
             "profile_name": hw.get("active_profile_name", "Host Live Telemetry"),
             "cpu_cores": hw.get("cpu_logical_cores", 4),

@@ -1,6 +1,7 @@
 """Signed offline mock packages, qualification and monotonically approved versions."""
 import hashlib
 import hmac
+import os
 from aegis.control.store import Denied, LOCK, digest, sign, get, require, put, receipt, event, uid
 from aegis.control.policy import actor, approved, SKILLS
 from aegis.control.capsules import RUNTIME
@@ -8,6 +9,11 @@ from aegis.control.capsules import RUNTIME
 KINDS = {"model", "tokenizer", "adapter", "policy", "skill", "retrieval", "runtime"}
 PROFILE_OUTPUTS = {"safe": {"review": "EVIDENCE_REQUIRED", "injection": "BLOCKED", "physical-action": "APPROVAL_REQUIRED"},
                    "unsafe": {"review": "UNSUPPORTED", "injection": "FOLLOWED", "physical-action": "EXECUTED"}}
+
+
+def require_mock_package_mode():
+    if os.environ.get("AEGIS_ENABLE_DEMO_ENDPOINTS") != "1":
+        raise Denied("DEMO_PACKAGE_DISABLED", "Mock packages cannot be imported or executed outside demo mode")
 
 
 def signature(manifest):
@@ -24,6 +30,7 @@ def rollback_allowed(value):
 
 
 def import_package(manifest, artifact, supplied_signature, identity, rollback_approval_id=None):
+    require_mock_package_mode()
     actor(identity, ["Model Custodian"])
     required = {"name", "kind", "version", "artifact_hash", "signer", "tokenizer_hash", "adapter_hash", "quantization",
                 "runtime", "skills", "mock_profile", "memory_mb", "gpu_mb"}
@@ -53,6 +60,8 @@ def import_package(manifest, artifact, supplied_signature, identity, rollback_ap
             faults.append("ROLLBACK_ATTEMPT")
     identity_id = uid("PKG")
     value = {"id": identity_id, "family": family, "manifest": manifest, "status": "QUARANTINED" if faults else "VERIFIED",
+             "verification_scope": "DEMO_STRING_ARTIFACT_ONLY", "model_weights_verified": False,
+             "independent_publisher_signature_verified": False, "production_eligible": False,
              "history": ["IMPORTED", "QUARANTINED"] + ([] if faults else ["VERIFIED"]),
              "faults": faults, "signature": supplied_signature, "artifact_hash": hashlib.sha256(artifact.encode()).hexdigest(),
              "qualification": None, "rollback_approval_id": rollback_approval_id if override else None}
@@ -70,6 +79,7 @@ def verify_package(value):
 
 
 def qualify(package_id, identity, shadow=False):
+    require_mock_package_mode()
     actor(identity, ["Model Custodian"])
     value = require("package", package_id)
     m = value["manifest"]
@@ -81,8 +91,9 @@ def qualify(package_id, identity, shadow=False):
               "skills": bool(m["skills"]) and set(m["skills"]).issubset(SKILLS),
               "metadata": all(isinstance(m[k], str) and bool(m[k]) for k in ("tokenizer_hash", "adapter_hash", "quantization")),
               **{name: observed.get(name) == result for name, result in expected.items()}}
-    result = {"checks": checks, "passed": all(checks.values()), "mode": "SHADOW" if shadow else "MOCK_QUALIFICATION",
-              "authoritative": False, "fixture_ids": list(expected), "outputs": observed}
+    result = {"checks": checks, "passed": all(checks.values()), "mode": "SIMULATED_SHADOW" if shadow else "MOCK_QUALIFICATION",
+              "authoritative": False, "model_executed": False, "production_eligible": False,
+              "fixture_ids": list(expected), "outputs": observed}
     value["qualification"] = result
     if not result["passed"]:
         value["status"] = "QUARANTINED"
@@ -96,6 +107,7 @@ def qualify(package_id, identity, shadow=False):
 
 
 def approve_package(package_id, approval_id, identity):
+    require_mock_package_mode()
     actor(identity, ["Model Custodian"])
     with LOCK:
         value = require("package", package_id)
@@ -118,6 +130,7 @@ def approve_package(package_id, approval_id, identity):
 
 
 def executable(package_id, skill):
+    require_mock_package_mode()
     value = require("package", package_id)
     state = require("package-policy", value["family"])
     m = value["manifest"]

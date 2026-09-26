@@ -36,9 +36,27 @@ def seed_model_registry() -> None:
             profile["gpu_vram_req_mb"],
             profile.get("qualification_score"),
             profile.get("shadow_agreement_score"),
-            json.dumps({**profile.get("benchmark_summary", {}), "integrity_check": "PASS",
+            json.dumps({**profile.get("benchmark_summary", {}),
+                        "integrity_check": "SYNTHETIC_PROFILE_ONLY",
+                        "qualification_mode": "DETERMINISTIC_FIXTURE",
+                        "score_is_measured": False,
+                        "artifact_integrity_verified": False,
                         "license_compliant": profile["license"] in APPROVED_SOVEREIGN_LICENSES})
         ))
+
+def _describe_assurance(record: Dict[str, Any]) -> Dict[str, Any]:
+    # This registry holds metadata and deterministic fixtures, never model bytes.
+    # Normalize records written by older versions that called a demo "QUALIFIED".
+    if record["status"] == "QUALIFIED":
+        record["status"] = "DEMO_QUALIFIED"
+    record["verification_scope"] = "MANIFEST_METADATA_ONLY"
+    record["manifest_checksum_matches"] = model_manifest_checksum_matches(record)
+    record["artifact_integrity_verified"] = False
+    record["publisher_signature_verified"] = False
+    record["runtime_binding_verified"] = False
+    record["production_eligible"] = False
+    return record
+
 
 def get_all_models() -> List[Dict[str, Any]]:
     """Retrieve all models from the offline registry."""
@@ -46,7 +64,7 @@ def get_all_models() -> List[Dict[str, Any]]:
     for r in rows:
         r["capabilities"] = json.loads(r["capabilities"]) if isinstance(r["capabilities"], str) else r["capabilities"]
         r["benchmark_summary"] = json.loads(r["benchmark_summary"]) if isinstance(r["benchmark_summary"], str) else r["benchmark_summary"]
-    return rows
+    return [_describe_assurance(row) for row in rows]
 
 def get_model_by_id(model_id: str) -> Optional[Dict[str, Any]]:
     """Retrieve specific model profile."""
@@ -54,7 +72,7 @@ def get_model_by_id(model_id: str) -> Optional[Dict[str, Any]]:
     if r:
         r["capabilities"] = json.loads(r["capabilities"]) if isinstance(r["capabilities"], str) else r["capabilities"]
         r["benchmark_summary"] = json.loads(r["benchmark_summary"]) if isinstance(r["benchmark_summary"], str) else r["benchmark_summary"]
-    return r
+    return _describe_assurance(r) if r else None
 
 APPROVED_SOVEREIGN_LICENSES = [
     "Apache-2.0",
@@ -73,7 +91,7 @@ RESTRICTED_LICENSES = [
     "GPL-3.0-Network-Restricted"
 ]
 
-def model_integrity_verified(model: Dict[str, Any]) -> bool:
+def model_manifest_checksum_matches(model: Dict[str, Any]) -> bool:
     if compute_manifest_sha256(model) == model["sha256"]:
         return True
     # Read compatibility for the original bundled synthetic profiles only.
@@ -81,11 +99,15 @@ def model_integrity_verified(model: Dict[str, Any]) -> bool:
         model.get(key) == profile.get(key) for key in ModelManifest.model_fields
     ) for profile in DEMO_MODEL_PROFILES)
 
+
+def model_integrity_verified(model: Dict[str, Any]) -> bool:
+    """Compatibility name: checks manifest metadata only, never model bytes."""
+    return model_manifest_checksum_matches(model)
+
 def import_model_manifest(manifest: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Import a model manifest into the air-gapped registry.
-    Performs manifest validation, license metadata checks, SHA-256 integrity checks,
-    and initially places model in QUARANTINE.
+    Store demo model metadata, check its self-declared checksum, and quarantine it.
+    No model artifact is imported or verified here.
     """
     manifest = ModelManifest.model_validate(manifest).model_dump()
     if any(not cap.strip() for cap in manifest["capabilities"]):
@@ -102,7 +124,7 @@ def import_model_manifest(manifest: Dict[str, Any]) -> Dict[str, Any]:
         license_verdict = "COMMUNITY_UNVETTED (Requires Legal Sign-off)"
         license_compliant = False
 
-    # Compute content hash check
+    # Check only canonical manifest metadata; no model bytes are available.
     computed_hash = compute_manifest_sha256(manifest)
 
     # Integrity verification check
@@ -111,7 +133,7 @@ def import_model_manifest(manifest: Dict[str, Any]) -> Dict[str, Any]:
     initial_status = "QUARANTINED"
     quarantine_reasons = ["Mandatory staging quarantine for unvetted sovereign packages."]
     if not integrity_pass:
-        quarantine_reasons.append("SHA-256 hash mismatch: potential tampering or corrupted transfer.")
+        quarantine_reasons.append("Manifest SHA-256 checksum mismatch; model artifact was not checked.")
     if not license_compliant:
         quarantine_reasons.append(f"License constraint: {license_verdict}")
 
@@ -138,7 +160,7 @@ def import_model_manifest(manifest: Dict[str, Any]) -> Dict[str, Any]:
         manifest.get("gpu_vram_req_mb", 0),
         json.dumps({
             "manifest_validation": "PASS",
-            "integrity_check": "PASS" if integrity_pass else "FAIL_HASH_MISMATCH",
+            "integrity_check": "MANIFEST_CHECKSUM_PASS" if integrity_pass else "FAIL_MANIFEST_CHECKSUM",
             "license_check": license_verdict,
             "license_compliant": license_compliant,
             "imported_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -150,7 +172,11 @@ def import_model_manifest(manifest: Dict[str, Any]) -> Dict[str, Any]:
         "model_id": manifest["id"],
         "status": initial_status,
         "manifest_valid": True,
-        "integrity_verified": integrity_pass,
+        "integrity_verified": False,
+        "manifest_checksum_matches": integrity_pass,
+        "artifact_integrity_verified": False,
+        "publisher_signature_verified": False,
+        "production_eligible": False,
         "license_check": license_verdict,
         "sha256": manifest["sha256"],
         "quarantine_reasons": quarantine_reasons
@@ -161,8 +187,8 @@ def run_simulated_qualification(model_id: str) -> Dict[str, Any]:
     """
     Run simulated offline qualification suite on a quarantined model.
     Tests: prompt injection immunity, industrial vocabulary recall, hallucination rate.
-    Transitions model from QUARANTINED -> QUALIFIED if score >= 90%.
-    Blocks qualification if the model package failed cryptographic integrity verification.
+    Transitions model from QUARANTINED -> DEMO_QUALIFIED using fixture scores.
+    This does not inspect model bytes or grant production eligibility.
     """
     model = get_model_by_id(model_id)
     if not model:
@@ -172,10 +198,10 @@ def run_simulated_qualification(model_id: str) -> Dict[str, Any]:
     summary = model.get("benchmark_summary") or {}
     if isinstance(summary, str):
         summary = json.loads(summary)
-    if not model_integrity_verified(model):
-        raise ValueError(f"Cannot qualify model '{model_id}': Failed SHA-256 cryptographic integrity verification. Package is tampered or corrupted.")
+    if not model_manifest_checksum_matches(model):
+        raise ValueError(f"Cannot demo-qualify model '{model_id}': Manifest SHA-256 checksum mismatch.")
     if model["license"] not in APPROVED_SOVEREIGN_LICENSES:
-        raise ValueError(f"Cannot qualify model '{model_id}': License restriction detected ({summary.get('license_check')}). Unapproved for sovereign air-gap deployment.")
+        raise ValueError(f"Cannot demo-qualify model '{model_id}': License metadata restriction ({model['license']}).")
 
     # Simulated qualification benchmark
     sim_score = 97.2
@@ -185,12 +211,15 @@ def run_simulated_qualification(model_id: str) -> Dict[str, Any]:
         "industrial_sop_comprehension": "98.5%",
         "evidence_hallucination_rate": "0.6%",
         "qualification_test_date": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "verdict": "PASSED_QUALIFICATION"
+        "verdict": "PASSED_SIMULATED_QUALIFICATION",
+        "qualification_mode": "DETERMINISTIC_FIXTURE",
+        "score_is_measured": False,
+        "artifact_integrity_verified": False
     }
 
     execute_write("""
         UPDATE models
-        SET status = 'QUALIFIED',
+        SET status = 'DEMO_QUALIFIED',
             qualification_score = ?,
             benchmark_summary = ?,
             updated_at = CURRENT_TIMESTAMP
@@ -200,15 +229,15 @@ def run_simulated_qualification(model_id: str) -> Dict[str, Any]:
     return {
         "model_id": model_id,
         "previous_status": model["status"],
-        "new_status": "QUALIFIED",
+        "new_status": "DEMO_QUALIFIED",
+        "production_eligible": False,
         "qualification_score": sim_score,
         "benchmark_results": benchmark_results
     }
 
 def run_shadow_mode_simulation(candidate_model_id: str, baseline_model_id: str = "AEGIS-DEMO-TEXT") -> Dict[str, Any]:
     """
-    Simulate shadow execution: candidate model runs parallel with baseline model on 100 industrial prompts.
-    Computes agreement score and divergence rate.
+    Return a fixed illustrative comparison; no candidate or baseline model runs.
     """
     candidate = get_model_by_id(candidate_model_id)
     baseline = get_model_by_id(baseline_model_id)
@@ -216,7 +245,7 @@ def run_shadow_mode_simulation(candidate_model_id: str, baseline_model_id: str =
     if not candidate or not baseline:
         raise ValueError("Invalid candidate or baseline model ID")
     for model in (candidate, baseline):
-        if (model["status"] != "QUALIFIED"
+        if (model["status"] != "DEMO_QUALIFIED"
                 or not model_integrity_verified(model)
                 or model["license"] not in APPROVED_SOVEREIGN_LICENSES):
             raise ValueError("Shadow comparison requires qualified, intact models with approved license metadata")
@@ -239,7 +268,9 @@ def run_shadow_mode_simulation(candidate_model_id: str, baseline_model_id: str =
         "candidate_model_id": candidate_model_id,
         "baseline_model_id": baseline_model_id,
         "shadow_agreement_score": agreement_score,
-        "sample_cases_tested": 100,
+        "sample_cases_tested": 0,
+        "score_is_measured": False,
+        "models_executed": False,
         "divergence_details": divergence_details,
         "simulation_mode": True
     }

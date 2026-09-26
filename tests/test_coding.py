@@ -208,11 +208,11 @@ def test_local_provider_requires_configuration_and_pins_digest(coding, monkeypat
             providers.propose(spec, [], "ASK", 0)
         assert error.value.code == "MODEL_DIGEST_MISMATCH" and request.call_count == 1
     with patch.object(providers, "request_json", side_effect=[{"models": [{"name": spec["model"], "digest": spec["digest"]}]},
-                {"done": True, "message": {"content": '{"message":"ok","actions":[]}'}}]) as request:
+                {"model": spec["model"], "done": True, "message": {"content": '{"message":"ok","actions":[]}'}}]) as request:
         assert providers.propose(spec, [], "ASK", 0).message == "ok"
         assert request.call_args.args[1]["keep_alive"] == 0
     with patch.object(providers, "request_json", side_effect=[{"models": [{"name": spec["model"], "digest": spec["digest"]}]},
-                {"done": True, "message": {"content": '{"message":"ok","actions":[],"authority":"root"}'}}]):
+                {"model": spec["model"], "done": True, "message": {"content": '{"message":"ok","actions":[],"authority":"root"}'}}]):
         with pytest.raises(store.Denied) as error:
             providers.propose(spec, [], "ASK", 0)
         assert error.value.code == "INVALID_MODEL_PROPOSAL"

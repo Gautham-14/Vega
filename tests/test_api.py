@@ -5,12 +5,14 @@ import pytest
 from starlette.testclient import TestClient
 from aegis.api.server import app
 from aegis.storage.database import init_db
+from aegis.control.store import init_control
 from aegis.models.registry import seed_model_registry
 from aegis.knowledge.demo_data import seed_knowledge_registry
 
 @pytest.fixture(autouse=True)
 def setup_api():
     init_db()
+    init_control()
     seed_model_registry()
     seed_knowledge_registry()
 
@@ -31,7 +33,8 @@ def test_api_dashboard_status():
     assert data["runtime_mode"] == "SIMULATION"
     assert data["internet"] == "NOT VERIFIED"
     assert data["security_tests_status"] in {"NOT RUN", "6 / 6 PASS"}
-    assert data["external_calls"] == 0
+    assert data["external_calls"] is None
+    assert data["network_measurement_scope"] == "NOT_MEASURED"
 
 def test_api_models():
     client = TestClient(app)

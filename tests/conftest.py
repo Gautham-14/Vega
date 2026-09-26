@@ -1,10 +1,13 @@
 """Every test gets private storage; collection must not open the user's data."""
 import os
 import tempfile
+from pathlib import Path
 
 import pytest
 
-_collection_storage = tempfile.TemporaryDirectory(prefix="aegis-test-collection-")
+# macOS commonly aliases /var to /private/var; use the canonical OS temp root
+# while retaining the application's rejection of arbitrary symlinked inputs.
+_collection_storage = tempfile.TemporaryDirectory(prefix="aegis-test-collection-", dir=Path(tempfile.gettempdir()).resolve())
 os.environ["AEGIS_DATA_DIR"] = _collection_storage.name
 os.environ["AEGIS_ALLOWED_HOSTS"] = "localhost,127.0.0.1,[::1],testserver"
 os.environ["AEGIS_ENABLE_DEMO_ENDPOINTS"] = "1"

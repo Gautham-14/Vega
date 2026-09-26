@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import threading
 import time
@@ -26,17 +27,112 @@ def uid(prefix):
     return f"{prefix}-{uuid.uuid4().hex}"
 
 
+def _requires_existing_key():
+    """Never replace a lost trust root when protected state already exists."""
+    if not config.DB_PATH.exists():
+        return False
+    with get_db_connection() as conn:
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
+        for table in ("control_receipts", "control_head"):
+            if table in tables and conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone():
+                return True
+        if "control_objects" in tables:
+            for row in conn.execute("SELECT kind,body FROM control_objects"):
+                value = json.loads(row[1])
+                if ({"ciphertext", "wrapped_key", "wrapped", "seal"} & value.keys()
+                        or row[0] == "lease" and "signature" in value):
+                    return True
+    return False
+
+
 def secret():
-    # Local software trust root. Host administrators can read it; this is not an HSM.
+    # Local software trust root. Current-user DPAPI protects Windows copies at
+    # rest; a compromised logged-in account or host administrator can still use it.
     path = config.DATA_DIR / "control.key"
+    protected = config.DATA_DIR / "control.key.dpapi"
     with LOCK:
+        from aegis.security.private_files import no_links
+        no_links(path)
+        no_links(protected)
+        if protected.exists():
+            if os.name != "nt":
+                raise RuntimeError("This data directory contains a Windows-protected key. Restore an encrypted Aegis backup on this OS; do not copy the live Windows directory.")
+            from aegis.security.dpapi import unprotect
+            key = unprotect(protected.read_bytes())
+            if path.exists() and path.read_bytes() != key:
+                raise RuntimeError("Conflicting raw and protected control keys")
+            if len(key) != 32:
+                raise RuntimeError("Invalid protected control key")
+            return key
         if not path.exists():
-            with path.open("xb") as stream:
-                stream.write(secrets.token_bytes(32))
+            if _requires_existing_key():
+                raise RuntimeError("Control key is missing for existing protected state; restore the original key from an encrypted backup")
+            key = secrets.token_bytes(32)
+            if os.name == "nt":
+                from aegis.security.dpapi import protect, unprotect
+                from aegis.security.private_files import restrict_permissions
+                fd = os.open(protected, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                try:
+                    restrict_permissions(protected)
+                    with os.fdopen(fd, "wb") as stream:
+                        fd = -1
+                        stream.write(protect(key))
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    if unprotect(protected.read_bytes()) != key:
+                        raise RuntimeError("New protected control key verification failed")
+                except Exception:
+                    if fd >= 0:
+                        os.close(fd)
+                    protected.unlink(missing_ok=True)
+                    raise
+                return key
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(key)
+                stream.flush()
+                os.fsync(stream.fileno())
+        if os.name != "nt":
+            from aegis.security.private_files import restrict_permissions
+            restrict_permissions(path)
         key = path.read_bytes()
     if len(key) != 32:
         raise RuntimeError("Invalid local control key")
     return key
+
+
+def protect_secret():
+    """Migrate a backed-up key to current-user Windows DPAPI, then drop raw file."""
+    if os.name != "nt":
+        return "POSIX_KEY_PERMISSIONS_ONLY"
+    from aegis.security.dpapi import protect, unprotect
+    from aegis.security.private_files import no_links, restrict_permissions
+    path = no_links(config.DATA_DIR / "control.key")
+    protected = no_links(config.DATA_DIR / "control.key.dpapi")
+    with LOCK:
+        key = secret()
+        if protected.exists():
+            if unprotect(protected.read_bytes()) != key:
+                raise RuntimeError("Protected control key does not match the live key")
+        else:
+            wrapped = protect(key)
+            fd = os.open(protected, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                restrict_permissions(protected)
+                with os.fdopen(fd, "wb") as stream:
+                    fd = -1
+                    stream.write(wrapped)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except Exception:
+                if fd >= 0:
+                    os.close(fd)
+                protected.unlink(missing_ok=True)
+                raise
+            if unprotect(protected.read_bytes()) != key:
+                raise RuntimeError("Protected control key verification failed")
+        path.unlink(missing_ok=True)
+        return "CURRENT_USER_DPAPI"
 
 
 def sign(value, domain):
@@ -102,7 +198,7 @@ class Denied(ValueError):
         super().__init__(message)
 
 
-def verify_rows(rows, head):
+def verify_rows(rows, head, key=None):
     previous = "0" * 64
     sequence = 0
     try:
@@ -116,8 +212,10 @@ def verify_rows(rows, head):
         if not head:
             return sequence == 0
         expected = {"sequence": sequence, "hash": previous}
+        signature = (hmac.new(key, ("receipt-head" + canonical(expected)).encode(), hashlib.sha256).hexdigest()
+                     if key is not None else sign(expected, "receipt-head"))
         return (head["sequence"] == sequence and head["hash"] == previous
-                and hmac.compare_digest(head["signature"], sign(expected, "receipt-head")))
+                and hmac.compare_digest(head["signature"], signature))
     except (KeyError, ValueError, TypeError):
         return False
 
@@ -135,6 +233,8 @@ def verify_chain(record_failure=True):
 
 
 def receipt(action, actor="system", **metadata):
+    if set(metadata) & {"id", "sequence", "timestamp", "previous_receipt_hash", "receipt_hash"}:
+        raise ValueError("Receipt metadata cannot replace chain identity fields")
     with LOCK, get_db_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
         rows = conn.execute("SELECT * FROM control_receipts ORDER BY sequence").fetchall()

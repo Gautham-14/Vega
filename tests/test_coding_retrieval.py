@@ -19,6 +19,12 @@ def test_exact_and_python_symbols_rank_with_line_evidence():
     assert "other.py" not in [item["path"] for item in results]
 
 
+def test_chunk_line_evidence_stays_correct_at_chunk_boundary():
+    content = "x" * (retrieval.CHUNK_CHARS - 1) + "\nnext line"
+    chunks = retrieval._chunks({"notes.txt": content})
+    assert [chunk["line"] for chunk in chunks] == [1, 2]
+
+
 def test_lexical_splits_identifiers_and_missing_grammar_is_honest():
     files = {"main.js": "function parsePort(input) { return Number(input); }"}
     with patch.object(retrieval, "installed", return_value=False):
@@ -56,7 +62,9 @@ def test_embedding_digest_changes_with_weight_bytes_and_rejects_code(tmp_path):
 
 
 def test_semantic_adapter_is_local_only_and_scores_bounded(monkeypatch, tmp_path):
-    profile = {"enabled": True, "requested": True, "status": "PINNED_LOCAL_MODEL"}
+    (tmp_path / "model.safetensors").write_bytes(b"fixture-not-live-weights")
+    (tmp_path / "modules.json").write_text(json.dumps([{"type": "sentence_transformers.models.Transformer", "path": ""}]))
+    profile = {"enabled": True, "requested": True, "status": "PINNED_LOCAL_MODEL", "model_digest": retrieval.model_digest(str(tmp_path))}
     monkeypatch.setenv("AEGIS_EMBEDDING_MODEL_DIR", str(tmp_path))
     monkeypatch.setattr(retrieval, "_embedding_configuration", lambda: profile)
     calls = []
