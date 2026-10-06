@@ -74,6 +74,7 @@ class ProviderRequest(BaseModel):
     max_response_bytes: int = Field(default=1_000_000, ge=4096, le=12_000_000)
     context_tokens: int = Field(default=16384, ge=4096, le=1_048_576)
     vision: bool = False
+    bundle_record_id: str | None = Field(default=None, pattern=r"^BUNDLE-[a-f0-9]{32}$")
 
     @model_validator(mode="after")
     def approved_local_configuration(self):
@@ -100,6 +101,9 @@ class ProviderRequest(BaseModel):
 def register(identity, **definition):
     policy.actor(identity, ["Model Custodian"])
     config = ProviderRequest.model_validate(definition).model_dump()
+    if config.get("bundle_record_id"):
+        from aegis.security.bundle_custody import revalidate
+        revalidate(config["bundle_record_id"])
     value = {"id": store.uid("PROVIDER"), **config, "created_by": identity, "created_at": time.time(),
              "digest_verification": "CUSTODIAN_ASSERTED" if config["protocol"] == "openai-compatible" else "SERVER_REPORTED_SHA256"}
     value["seal"] = store.sign(value, "provider-profile")
@@ -137,7 +141,8 @@ def specification(provider):
         fields = ("protocol", "engine", "endpoint", "model", "digest", "local_only", "api_key_env", "max_tokens",
                   "timeout_seconds", "max_response_bytes", "digest_verification")
         return {"provider": value["id"], **{key: value[key] for key in fields},
-                "context_tokens": value.get("context_tokens", 16384), "vision": value.get("vision", False)}
+                "context_tokens": value.get("context_tokens", 16384), "vision": value.get("vision", False),
+                "bundle_record_id": value.get("bundle_record_id")}
     model = os.environ.get("AEGIS_OLLAMA_MODEL", "")
     digest = os.environ.get("AEGIS_OLLAMA_DIGEST", "")
     if (provider != "ollama" or os.environ.get("AEGIS_OLLAMA_LOCAL_ONLY") != "1"
@@ -147,13 +152,21 @@ def specification(provider):
     return {"provider": provider, "model": model, "digest": digest, "endpoint": "http://127.0.0.1:11434"}
 
 
+def configuration_hash(spec):
+    """Bind assurance evidence only to fields that affect local inference."""
+    fields = ("provider", "protocol", "engine", "endpoint", "model", "digest", "local_only", "api_key_env",
+              "max_tokens", "timeout_seconds", "max_response_bytes", "context_tokens", "vision", "bundle_record_id")
+    return store.digest({key: spec.get(key) for key in fields if key in spec})
+
+
 def require_sensitive_boundary(spec, classification):
     """Do not disclose non-public data to a server whose process is unmeasured."""
     if classification not in {"PUBLIC", "INTERNAL"}:
         raise store.Denied("UNSUPPORTED_CLASSIFICATION", "This workflow accepts PUBLIC or INTERNAL data only")
     if classification != "PUBLIC" and spec.get("provider") != "reference":
-        raise store.Denied("MODEL_ASSURANCE_REQUIRED",
-                           "Non-public content requires verified model, runtime and network isolation; no live provider has that assurance yet")
+        # Imported lazily to keep provider transport independent of the release protocol.
+        from aegis.security.provider_assurance import require_active_release
+        return require_active_release(spec)
 
 
 def request_json(path, body=None, *, spec=None, media=False):
@@ -191,6 +204,11 @@ def request_json(path, body=None, *, spec=None, media=False):
         if payload is not None and len(payload) > (12_000_000 if media else 1_000_000):
             raise ValueError("Model request exceeded the limit")
         lockdown.check(generation)
+        if body is not None and config.get("_sensitive_release_id"):
+            from aegis.security.provider_assurance import require_active_release
+            release = require_active_release(config)
+            if release["id"] != config["_sensitive_release_id"]:
+                raise store.Denied("PROVIDER_RELEASE_CHANGED", "Provider release changed before dispatch")
         connection.request(method, path, body=payload, headers=headers)
         response = connection.getresponse()
         if response.status != 200:

@@ -111,6 +111,7 @@ class BundleManifest(BaseModel):
     modality: Literal["text", "vision", "image-generation", "embedding"]
     tokenizer_mode: Literal["embedded", "file"]
     runtime_entry: str
+    runtime_platform: Literal["windows", "linux", "macos"] = "windows"
     files: list[BundleFile] = Field(min_length=3, max_length=MAX_FILES)
 
     @model_validator(mode="after")
@@ -126,7 +127,7 @@ class BundleManifest(BaseModel):
         if self.modality == "vision" and "projector" not in roles:
             raise ValueError("Vision projector file is missing")
         _safe_relative(self.runtime_entry)
-        if PurePosixPath(self.runtime_entry).suffix.lower() != ".exe":
+        if self.runtime_platform == "windows" and PurePosixPath(self.runtime_entry).suffix.lower() != ".exe":
             raise ValueError("Windows runtime entry must be an executable file")
         if not any(item.path == self.runtime_entry and item.role == "runtime" for item in self.files):
             raise ValueError("Runtime entry must identify a declared runtime file")
@@ -279,6 +280,11 @@ def verify_bundle(bundle_dir: str | Path, trust_policy_path: str | Path) -> dict
             "trust_policy_sha256": hashlib.sha256(policy_raw).hexdigest(),
             "signer_public_key_sha256": signer.public_key_sha256,
             "file_count": len(manifest.files), "file_bytes": total,
+            "runtime_platform": manifest.runtime_platform, "runtime_entry": manifest.runtime_entry,
+            "runtime_sha256": next(item.sha256 for item in manifest.files if item.path == manifest.runtime_entry),
+            "weights_inventory_sha256": hashlib.sha256(canonical_bytes({"files": [
+                item.model_dump() for item in manifest.files if item.role in {"weights", "projector", "tokenizer"}
+            ]})).hexdigest(),
             "signature_verified": True, "artifact_integrity_verified": True,
             "license_identifier_allowlisted": True,
             "runtime_binding_verified": False, "model_qualification_verified": False,

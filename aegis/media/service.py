@@ -15,10 +15,12 @@ from aegis.control import capsules, policy, store
 from aegis.control.runtime import POLICY_STATE
 from aegis.media import images, inference
 from aegis.security import lockdown
+from aegis.security import provider_assurance, model_qualification, bundle_custody, offline_bundle
 
 BUSY = threading.Lock()
 PATHS = [Path(__file__), Path(images.__file__), Path(inference.__file__), Path(providers.__file__),
-         Path(tools.__file__), Path(policy.__file__), Path(capsules.__file__), Path(store.__file__), Path(lockdown.__file__)]
+         Path(tools.__file__), Path(policy.__file__), Path(capsules.__file__), Path(store.__file__), Path(lockdown.__file__),
+         Path(provider_assurance.__file__), Path(model_qualification.__file__), Path(bundle_custody.__file__), Path(offline_bundle.__file__)]
 LOADED = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in PATHS}
 
 

@@ -24,6 +24,24 @@ class ContextFirewall:
         matched_rules = []
         highest_severity = "NONE"
 
+        # 0. Client-Side Data Loss Prevention (DLP)
+        import re
+        dlp_patterns = {
+            "API_KEY": r"(?i)(sk-[a-zA-Z0-9]{20,}|Bearer\s[a-zA-Z0-9\-\.]{20,})",
+            "IPV4_ADDR_OT": r"\b(?:10|192\.168|172\.(?:1[6-9]|2[0-9]|3[0-1]))\.\d{1,3}\.\d{1,3}\b",
+            "SSN_OR_CLASSIFIED": r"\b\d{3}-\d{2}-\d{4}\b|\bTOP-SECRET-\w+\b"
+        }
+        for dlp_name, dlp_pattern in dlp_patterns.items():
+            if re.search(dlp_pattern, text):
+                matched_rules.append({
+                    "rule_id": f"DLP-BLOCK-{dlp_name}",
+                    "rule_name": f"Data Loss Prevention: {dlp_name}",
+                    "severity": "CRITICAL",
+                    "description": "Sensitive internal data blocked by outbound DLP firewall from reaching remote inference.",
+                    "matched_snippets": ["[REDACTED]"]  # Do not store sensitive info
+                })
+                highest_severity = "CRITICAL"
+
         # 1. Check Regex Injection Patterns
         for rule in self.patterns:
             matches = rule["pattern"].findall(text)

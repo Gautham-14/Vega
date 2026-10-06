@@ -3,6 +3,16 @@ import re
 
 
 GUIDES = {
+    "quickstart": [
+        "Welcome to Aegis CLI! Here is a simple guide to get started:",
+        "1. Create an account: users set <your-username>",
+        "2. Sign in: login <your-username>",
+        "3. Import a workspace/repository: import <directory-path> --name <workspace-name>",
+        "4. Create a task/lease: lease --repo <workspace-name> --capsule <capsule-id> --recipient <your-username>",
+        "5. Use the lease: use <lease-id>",
+        "6. Run a prompt: run <your prompt text>",
+        "For more details, type: help start",
+    ],
     "start": [
         "doctor — inspect local API, identity, lockdown, receipts and image dependencies",
         "login operator — sign in with a hidden password prompt",
@@ -32,9 +42,16 @@ GUIDES = {
     ],
     "models": [
         "bundle-verify <directory> --trust-policy <file> — verify an independently signed offline bundle",
+        "Host administrator: bundle-record <directory> --trust-policy <file>; include its ID as bundle_record_id in the provider profile",
         "Model Custodian: provider-add profile.json; providers lists registered connections",
         "provider-probe <id> explicitly contacts that local model server",
         "provider-qualify <id> suite.json explicitly runs PUBLIC text candidate tests",
+        "provider-qualify-media <id> suite.json — PUBLIC vision/OCR/generation/editing regressions",
+        "Host administrator: embedding-qualify <directory> <digest> suite.json — PUBLIC embedding ranking regressions",
+        "provider-measure <id> <pid> — measured process snapshot for an independent attestor; no egress claim",
+        "Security Officer: provider-attest <id> evidence.json; reviewers: provider-release-review <id> <candidate-id>",
+        "Model Custodian and Data Owner approve; Model Custodian: provider-release <id> <approval-id>",
+        "Security Officer: provider-refresh <id> evidence.json before expiry, or provider-revoke-release <id>",
         "Candidate tests do not approve a model or prove its serving process, retention or network isolation.",
     ],
     "security": [
@@ -42,6 +59,7 @@ GUIDES = {
         "Security Officer: lockdown enable — stop governed execution and content release",
         "lockdown disable permits fresh authorization; old leases and media tasks stay invalid",
         "verify — verify local receipt-chain integrity; no independent hardware witness is claimed",
+        "Auditor/Security Officer: audit-export <new-file> — content-free receipt commitments for offline anchoring",
         "close <task-id>, revoke <lease-id>, media-revoke <task-id> — explicit cleanup/revocation",
         "Application lockdown cannot terminate model processes, retract sent data or silence Windows networking.",
     ],
@@ -53,8 +71,11 @@ GUIDES = {
         "Restores revoke sessions and require fresh execution approvals; check historical lockdown state.",
     ],
     "accounts": [
-        "users roles — list the fixed local account roles",
+        "users roles — list local role/clearance templates",
         "Local administrator: users set <actor> — provision/reset with hidden password prompts",
+        "users set <new-name> --like <template> — create a named account with an immutable role binding",
+        "users list | users sessions <actor> — inventory without password or token hashes",
+        "users disable <actor> | users revoke-sessions <actor> — revoke sessions and existing work",
         "login <actor>, whoami, logout — local session operations",
         "Password resets revoke that account's sessions; use independent credentials for reviewers.",
         "persona is only for explicitly enabled demo mode before accounts exist.",

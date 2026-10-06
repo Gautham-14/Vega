@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Aegis: local setup and one-command launch on Windows, Linux and macOS.",
-                                     epilog="Start here: setup. Daily use: start (also the default). No environment activation is needed.")
+                                     epilog="Start here: setup. Daily use: start (also the default). No environment activation is needed.\nFirst time users run: aegis.py cli help quickstart")
     commands = parser.add_subparsers(dest="command")
     start = commands.add_parser("start", help="Start the local API and CLI; stop the API when the CLI exits")
     start.add_argument("--port", type=int, default=8000)

@@ -14,6 +14,12 @@ router = APIRouter(prefix="/api/security", tags=["Security"])
 firewall = ContextFirewall()
 
 
+@router.get("/audit-commitments")
+def audit_commitments(identity=Depends(principal)):
+    from aegis.security.audit_export import snapshot
+    return snapshot(identity)
+
+
 class LockdownRequest(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
     enabled: bool

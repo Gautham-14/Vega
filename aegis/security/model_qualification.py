@@ -1,6 +1,7 @@
 """Bounded, local text-model candidate evaluation; never grants approval."""
 
 import hashlib
+import hmac
 import time
 from typing import Literal
 
@@ -92,15 +93,35 @@ def run_candidate_suite(provider_id: str, suite: dict, identity: str) -> dict:
         results.append({"id": case.id, "passed": not missing and not forbidden and latency <= case.max_latency_ms,
                         "missing_required": len(missing), "forbidden_found": len(forbidden),
                         "latency_ms": latency, "output_sha256": hashlib.sha256(output.encode()).hexdigest()})
-    result = {"status": "CANDIDATE_TESTED_NOT_APPROVED", "provider": provider_id,
+    result = {"id": store.uid("QUAL"), "status": "CANDIDATE_TESTED_NOT_APPROVED", "provider": provider_id,
               "model": spec["model"], "suite_sha256": suite_hash, "case_count": len(results),
               "passed": sum(item["passed"] for item in results), "results": results,
+              "provider_configuration_sha256": providers.configuration_hash(spec),
+              "created_at": time.time(),
               "raw_outputs_retained": False, "independent_review_completed": False,
               "runtime_binding_verified": False, "network_isolation_verified": False,
               "production_eligible": False}
     with store.LOCK:
         lockdown.check(generation)
+        sealed = {**result, "seal": store.sign(result, "provider-qualification-v1")}
+        store.put("provider-qualification", result["id"], sealed)
         store.receipt("MODEL_CANDIDATE_EVALUATED", identity, provider_id=provider_id,
+                      qualification_id=result["id"],
                       suite_sha256=suite_hash, passed=result["passed"], case_count=len(results),
                       production_eligible=False)
     return result
+
+
+def qualification(qualification_id: str) -> dict:
+    """Return a sealed qualification summary without any model response text."""
+    value = store.require("provider-qualification", qualification_id)
+    body = {key: item for key, item in value.items() if key != "seal"}
+    if (not isinstance(value.get("seal"), str)
+            or not hmac.compare_digest(value["seal"], store.sign(body, "provider-qualification-v1"))):
+        raise store.Denied("QUALIFICATION_INTEGRITY_FAILURE", "Qualification record was modified", qualification_id)
+    return body
+
+
+def qualification_hash(value: dict) -> str:
+    """Stable binding used by a signed runtime attestation and release approval."""
+    return store.digest({key: item for key, item in value.items() if key != "seal"})

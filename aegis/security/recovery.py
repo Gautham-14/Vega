@@ -208,7 +208,7 @@ def _restore_files(files: dict[str, bytes]) -> dict[str, bytes]:
         if "auth_sessions" in tables:
             conn.execute("DELETE FROM auth_sessions")
         if "control_objects" in tables:
-            for kind, identity, raw in conn.execute("SELECT kind,id,body FROM control_objects WHERE kind IN ('approval','capsule')").fetchall():
+            for kind, identity, raw in conn.execute("SELECT kind,id,body FROM control_objects WHERE kind IN ('approval','capsule','provider-release','provider-release-candidate')").fetchall():
                 value = json.loads(raw)
                 value.pop("seal", None)
                 value["status"] = "UNAPPROVED" if kind == "capsule" else "RESTORED_REVIEW_REQUIRED"

@@ -116,6 +116,8 @@ def test_restore_revokes_sessions_and_execution_approvals(tmp_path):
     policy.decide(approval["id"], "data-owner", "APPROVE")
     policy.decide(approval["id"], "security-officer", "APPROVE")
     store.put("capsule", "test-capsule", {"status": "APPROVED", "seal": "old"})
+    store.put("provider-release", "test-release", {"status": "ACTIVE", "seal": "old"})
+    store.put("provider-release-candidate", "test-candidate", {"status": "REVIEW_REQUIRED", "seal": "old"})
     archive = tmp_path.parent / (tmp_path.name + ".aegis-backup")
     recovery.create_backup(archive, "synthetic-backup-password")
     target = tmp_path.parent / (tmp_path.name + "-restored")
@@ -123,7 +125,7 @@ def test_restore_revokes_sessions_and_execution_approvals(tmp_path):
     assert result["sessions_revoked"] and result["execution_reapproval_required"]
     with sqlite3.connect(target / "db/aegis.db") as db:
         assert db.execute("SELECT count(*) FROM auth_sessions").fetchone()[0] == 0
-        for kind, raw in db.execute("SELECT kind,body FROM control_objects WHERE kind IN ('approval','capsule')"):
+        for kind, raw in db.execute("SELECT kind,body FROM control_objects WHERE kind IN ('approval','capsule','provider-release','provider-release-candidate')"):
             body = json.loads(raw)
             assert "seal" not in body and body["status"] != "APPROVED"
 

@@ -5,12 +5,12 @@ import json
 import logging
 import hmac
 from pathlib import Path
-from aegis.control.store import Denied, LOCK, digest, require, put, receipt, uid, sign
+from aegis.control.store import Denied, LOCK, digest, require, put, receipt, uid, sign, get
 
 POLICY_VERSION = "aegis-prototype-2"
 COMPARTMENTS = ["Engineering", "Maintenance", "Finance", "HR", "Public"]
 LEVELS = {"PUBLIC": 0, "INTERNAL": 1, "RESTRICTED": 2, "CONFIDENTIAL": 3}
-# Personas are a local demo identity simulation, never caller-supplied role claims.
+# Built-in local account templates; API callers never supply their own roles.
 ACTORS = {
     "operator": {"role": "Operator", "compartments": ["Engineering", "Maintenance", "Public"], "clearance": "INTERNAL"},
     "finance-operator": {"role": "Operator", "compartments": ["Finance", "Public"], "clearance": "CONFIDENTIAL"},
@@ -86,11 +86,22 @@ APPROVAL_ROLES = {
     "rollback-override": ("Model Custodian", "Security Officer"),
     "learning": ("Data Owner", "Security Officer"),
     "media-run": ("Data Owner", "Security Officer"),
+    # The Security Officer imports independently signed runtime/network evidence.
+    # The requester cannot approve it; custody and data ownership decide separately.
+    "provider-release": ("Model Custodian", "Data Owner"),
 }
 
 
 def actor(identity, roles=None):
     value = ACTORS.get(identity)
+    if value is None:
+        profile = get("account-profile", identity)
+        if profile:
+            body = {key: item for key, item in profile.items() if key != "seal"}
+            if (body.get("id") != identity or not isinstance(profile.get("seal"), str)
+                    or not hmac.compare_digest(profile["seal"], sign(body, "account-profile-v1"))):
+                raise Denied("ACCOUNT_PROFILE_INTEGRITY_FAILURE", "Local account role binding changed")
+            value = ACTORS.get(body.get("template"))
     if not value or (roles and value["role"] not in roles):
         raise Denied("UNAUTHORIZED_ROLE", "This persona cannot perform the action")
     return {"id": identity, **value}

@@ -101,7 +101,19 @@ def find_authoritative_document(
     authoritative = None
     current = []
 
+    clearance_levels = {"INTERNAL": 1, "RESTRICTED": 2, "CONFIDENTIAL": 3}
+    user_level = clearance_levels.get(user_clearance, 0)
+
     for doc in candidates:
+        doc_level = clearance_levels.get(doc.get("classification", "INTERNAL"), 1)
+        if doc_level > user_level:
+            rejected_reasons.append({
+                "filename": doc["filename"],
+                "revision": doc["revision"],
+                "reason": f"Clearance rejected: Document is {doc.get('classification')} but user is {user_clearance}"
+            })
+            continue
+
         if doc["status"] == "SUPERSEDED":
             rejected_reasons.append({
                 "filename": doc["filename"],

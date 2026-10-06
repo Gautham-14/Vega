@@ -15,7 +15,6 @@ WORKSPACES_DIR = DATA_DIR / "workspaces"
 RECEIPTS_DIR = DATA_DIR / "receipts"
 MODELS_DIR = DATA_DIR / "models"
 ARTIFACTS_DIR = DATA_DIR / "artifacts"
-FRONTEND_DIR = BASE_DIR / "frontend"
 
 # Ensure all essential directories exist
 for path in [DATA_DIR, DB_DIR, KNOWLEDGE_DIR, WORKSPACES_DIR, RECEIPTS_DIR, MODELS_DIR, ARTIFACTS_DIR]:

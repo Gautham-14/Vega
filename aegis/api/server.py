@@ -12,7 +12,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 
-from aegis.config import FRONTEND_DIR
 from aegis.storage.database import init_db
 
 from aegis.api.routes.dashboard import router as dashboard_router
@@ -210,12 +209,4 @@ def offline_docs():
     return '<!doctype html><html><head><meta charset="utf-8"><title>Aegis local API</title></head><body><h1>Aegis local API</h1><p><a href="/openapi.json">OpenAPI schema</a></p><p>Use the authenticated local CLI for operations. This documentation loads no external assets.</p></body></html>'
 
 
-if FRONTEND_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
-
-    @app.get("/")
-    def serve_frontend_index():
-        index_file = FRONTEND_DIR / "index.html"
-        if index_file.exists():
-            return FileResponse(index_file)
-        return {"message": "Aegis UI not built yet. Access /docs for API schema."}
+# (Frontend removed; CLI only)

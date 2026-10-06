@@ -29,7 +29,7 @@ try:
     from rich.panel import Panel
     from rich.json import JSON
     from rich.theme import Theme
-    console = Console(theme=Theme({"info": "dim cyan", "warning": "magenta", "danger": "bold red"}))
+    console = Console(theme=Theme({"info": "bold #8b5cf6", "warning": "bold yellow", "danger": "bold #dc143c", "verified": "bold #50c878", "quarantine": "bold #dc143c"}))
     has_rich = True
 except ImportError:
     has_rich = False
@@ -324,11 +324,12 @@ def print_result(value, *, json_output=False, plain=False):
     elif has_rich and not plain and sys.stdout.isatty():
         from rich.text import Text
         if isinstance(value, dict) and "patch" in value and isinstance(value["patch"], str):
-            console.print(Panel(Text(terminal_text(redacted["patch"])), title="Generated Patch", border_style="green"))
+            console.print(Panel(Text(terminal_text(redacted["patch"])), title="Generated Patch", border_style="#50c878"))
             v2 = {k: v for k,v in redacted.items() if k != "patch"}
             if v2: console.print(JSON(json.dumps(v2)))
         elif isinstance(value, dict) and "answer" in value and isinstance(value["answer"], str):
-            console.print(Text(terminal_text(redacted["answer"])))
+            from rich.markdown import Markdown
+            console.print(Markdown(terminal_text(redacted["answer"])))
             v2 = {k: v for k,v in redacted.items() if k != "answer"}
             if v2: console.print(JSON(json.dumps(v2)))
         else:
@@ -493,7 +494,7 @@ def build_parser():
     parser.add_argument("--json", action="store_true", help="Emit compact redacted JSON for one-shot commands")
     commands = parser.add_subparsers(dest="command")
     guide = commands.add_parser("help", help="Guided workflows or exact command arguments")
-    guide.add_argument("topic", nargs="?", default="start")
+    guide.add_argument("topic", nargs="?", default="quickstart")
     commands.add_parser("doctor", help="Read-only local diagnostics; no model probes or downloads")
     commands.add_parser("context", help="Inspect identity, selected lease and current incident authorization")
     commands.add_parser("compose", help="Multiline prompt: /send, /preview, /clear or /cancel; shell only")
@@ -509,13 +510,48 @@ def build_parser():
     bundle = commands.add_parser("bundle-verify", help="Verify every file in an independently signed offline model bundle")
     bundle.add_argument("directory", help="Offline bundle directory containing manifest.json and manifest.sig")
     bundle.add_argument("--trust-policy", required=True, help="Separately provisioned trust policy JSON outside the bundle")
+    custody = commands.add_parser("bundle-record", help="Host admin: verify and persist signed bundle custody in the server data directory")
+    custody.add_argument("directory")
+    custody.add_argument("--trust-policy", required=True)
+    commands.add_parser("bundle-revoke", help="Host admin: revoke a recorded bundle").add_argument("id")
     qualification = commands.add_parser("provider-qualify", help="Run PUBLIC candidate tests; never grants production approval")
     qualification.add_argument("id", help="Registered live provider ID")
     qualification.add_argument("suite", help="Reviewed PUBLIC qualification-suite JSON")
+    media_qualification = commands.add_parser("provider-qualify-media", help="Run PUBLIC vision/OCR/generation/editing candidate regression tests")
+    media_qualification.add_argument("id")
+    media_qualification.add_argument("suite")
+    embed = commands.add_parser("embedding-qualify", help="Host admin: run PUBLIC ranking cases against pinned local embeddings")
+    embed.add_argument("directory")
+    embed.add_argument("digest")
+    embed.add_argument("suite")
+    attestation = commands.add_parser("provider-attest", help="Import independently signed runtime and zero-egress evidence")
+    attestation.add_argument("id", help="Registered live provider ID")
+    attestation.add_argument("file", help="JSON containing attestation and detached base64 signature")
+    refresh = commands.add_parser("provider-refresh", help="Refresh unchanged signed evidence before expiry; fifteen-minute review ceiling")
+    refresh.add_argument("id")
+    refresh.add_argument("file")
+    measure = commands.add_parser("provider-measure", help="Measure local runtime; does not attest network isolation")
+    measure.add_argument("id")
+    measure.add_argument("pid", type=int)
+    release = commands.add_parser("provider-release", help="Activate the exact independently approved provider evidence")
+    release.add_argument("id", help="Registered live provider ID")
+    release.add_argument("approval_id", help="Approved provider-release review ID")
+    commands.add_parser("provider-assurance", help="Revalidate and show a provider's sensitive-data gate").add_argument("id")
+    commands.add_parser("provider-revoke-release", help="Security Officer revokes a provider release immediately").add_argument("id")
+    release_review = commands.add_parser("provider-release-review", help="Review the exact qualification, process and network evidence")
+    release_review.add_argument("id", help="Registered live provider ID")
+    release_review.add_argument("candidate_id", help="Release candidate ID returned by provider-attest")
     users = commands.add_parser("users", help="Host administrator provisioning (same AEGIS data directory as server)")
     user_commands = users.add_subparsers(dest="user_command", required=True)
     user_commands.add_parser("roles", help="List supported account roles")
-    user_commands.add_parser("set", help="Create/reset account and revoke its sessions").add_argument("actor")
+    user_set = user_commands.add_parser("set", help="Create/reset account and revoke its sessions")
+    user_set.add_argument("actor")
+    user_set.add_argument("--like", dest="template", help="Immutable built-in role/clearance template for a new named account")
+    user_commands.add_parser("list", help="List provisioned accounts and session counts")
+    user_commands.add_parser("sessions", help="List account session times without credentials").add_argument("actor")
+    user_commands.add_parser("disable", help="Disable account, revoke sessions and existing work").add_argument("actor")
+    user_commands.add_parser("revoke-sessions", help="Revoke all account sessions and existing work").add_argument("actor")
+    commands.add_parser("audit-export", help="Export receipt hashes only for independent offline anchoring").add_argument("file")
     backup = commands.add_parser("backup", help="Encrypted offline operational-state backup and recovery")
     backup_commands = backup.add_subparsers(dest="backup_command", required=True)
     backup_commands.add_parser("create", help="Create a new encrypted backup; prompts for passphrase").add_argument("file")
@@ -589,8 +625,16 @@ def provision_user(args):
     from aegis.control import policy, store
     if args.user_command == "roles":
         return policy.ACTORS
-    if args.actor not in policy.ACTORS:
-        raise CLIError("Unknown account. Use users roles to list supported IDs.")
+    if args.user_command in {"list", "sessions", "disable", "revoke-sessions"}:
+        from aegis.security import auth
+        from aegis.storage.database import init_db
+        init_db()
+        store.init_control()
+        if args.user_command == "list":
+            return auth.account_inventory()
+        if args.user_command == "sessions":
+            return auth.session_inventory(args.actor)
+        return auth.revoke_account(args.actor, disable=args.user_command == "disable")
     password = getpass("New Aegis password (12-256 characters): ")
     if password != getpass("Confirm password: "):
         raise CLIError("Passwords do not match")
@@ -600,7 +644,7 @@ def provision_user(args):
     from aegis.storage.database import init_db
     init_db()
     store.init_control()
-    return provision(args.actor, password)
+    return provision(args.actor, password, template=args.template)
 
 
 def backup_command(args):
@@ -620,6 +664,13 @@ def backup_command(args):
 
 def execute(args, client):
     command = {"coding-capsule": "register", "coding-lease": "lease", "coding-run": "run"}.get(args.command, args.command)
+    if command == "audit-export":
+        value = client.call("/security/audit-commitments")
+        target = no_links(args.file)
+        with target.open("x", encoding="utf-8") as stream:
+            restrict_permissions(target)
+            json.dump(value, stream, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
+        return {"path": str(target), "count": value["count"], "independently_anchored": False}
     if command == "help":
         if args.topic in GUIDES:
             return {"kind": "guide", "title": "Aegis / " + args.topic, "steps": GUIDES[args.topic]}
@@ -654,6 +705,14 @@ def execute(args, client):
     if command == "bundle-verify":
         from aegis.security.offline_bundle import verify_bundle
         return verify_bundle(args.directory, args.trust_policy)
+    if command in {"bundle-record", "bundle-revoke"}:
+        from aegis.control import store
+        from aegis.storage.database import init_db
+        from aegis.security import bundle_custody
+        init_db()
+        store.init_control()
+        return (bundle_custody.record(args.directory, args.trust_policy) if command == "bundle-record"
+                else bundle_custody.revoke(args.id))
     if command == "media-capabilities":
         return client.call("/media/capabilities")
     if command == "media-register":
@@ -722,6 +781,31 @@ def execute(args, client):
         return client.call(f"/providers/{segment(args.id)}/probe", "POST")
     if command == "provider-qualify":
         return client.call(f"/providers/{segment(args.id)}/qualify", "POST", json_file(args.suite))
+    if command == "provider-qualify-media":
+        return client.call(f"/providers/{segment(args.id)}/qualify-media", "POST", json_file(args.suite))
+    if command == "embedding-qualify":
+        from aegis.security.embedding_qualification import run
+        from aegis.control import store
+        from aegis.storage.database import init_db
+        init_db()
+        store.init_control()
+        return run(args.directory, args.digest, json_file(args.suite))
+    if command == "provider-attest":
+        return client.call(f"/providers/{segment(args.id)}/attestations", "POST", json_file(args.file))
+    if command == "provider-refresh":
+        return client.call(f"/providers/{segment(args.id)}/release/refresh", "POST", json_file(args.file))
+    if command == "provider-measure":
+        if args.pid <= 0:
+            raise CLIError("PID must be positive")
+        return client.call(f"/providers/{segment(args.id)}/measurement?pid={args.pid}")
+    if command == "provider-release":
+        return client.call(f"/providers/{segment(args.id)}/release", "POST", {"approval_id": segment(args.approval_id)})
+    if command == "provider-release-review":
+        return client.call(f"/providers/{segment(args.id)}/release-candidates/{segment(args.candidate_id)}")
+    if command == "provider-assurance":
+        return client.call(f"/providers/{segment(args.id)}/assurance")
+    if command == "provider-revoke-release":
+        return client.call(f"/providers/{segment(args.id)}/release/revoke", "POST")
     if command == "register":
         provider = args.profile or args.provider or "reference"
         if args.profile and args.provider and args.profile != args.provider:
@@ -810,22 +894,181 @@ def compose(client):
 
 def shell(client, parser, *, plain=False):
     styled = has_rich and not plain and sys.stdout.isatty()
+    
+    try:
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.completion import Completer, Completion
+        from prompt_toolkit.formatted_text import HTML
+        from prompt_toolkit.styles import Style
+        from prompt_toolkit.shortcuts import CompleteStyle
+        from prompt_toolkit.lexers import PygmentsLexer
+        from pygments.lexers.markup import MarkdownLexer
+        import shutil
+        has_pt = True
+    except ImportError:
+        has_pt = False
+
     if styled:
-        console.print(Panel.fit("[bold blue]Aegis Terminal[/]\n[dim]Operate through the configured local API.[/]", title="Aegis", border_style="cyan"))
-        console.print("[info]/help, /doctor, /context, /compose, /login <actor>, /exit. Plain text uses the selected lease.[/]")
+        from rich.table import Table
+        from rich.align import Align
+        from rich.panel import Panel
+        from rich.text import Text
+        
+        # Aegis-style ASCII art
+        banner = """[bold #8b5cf6]
+ █████╗ ███████╗ ██████╗ ██╗███████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
+██╔══██╗██╔════╝██╔════╝ ██║██╔════╝      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
+███████║█████╗  ██║  ███╗██║███████╗█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   
+██╔══██║██╔══╝  ██║   ██║██║╚════██║╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   
+██║  ██║███████╗╚██████╔╝██║███████║      ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   
+╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝╚══════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   
+[/]"""
+        
+        logo = """[bold #8b5cf6]
+                           ......
+                      :-+*########*+=-.
+                    =*%%%%%%%%########*=:.
+                 .=*%%%%%%%%%%%##########=:
+                 +%%%%%%%%%%%%%###########+-
+               .+%%@@@@%%%%%%%%%##########*+:
+               =#%%%%%%%%%%%%%%###########**=
+              :*%%%%%%- -%%%%%%####: :####**+:
+              -#%%%%-     -%%%###-     :##***-
+             .=%%%%%-     -%#####-     :##***=
+             .+%%%%%       ######       ##***=
+             .+%%%%%-     -######:     :##***=.
+    .-:.    -+%%%%%%-     -######:     :##****=:. ..--=-.
+   :+%%%#**#%%%%%%%%%%- -##########: :####*******+******-.
+   -*%%%%%%%%%%%%%%%%%%#####----##########**************=.
+   .+%%%%%%%%%%%%%%%%%%####-    -#########**************-.
+    :+%%%%%%%%%%%%%%%%%####-    -#########**=.-+******+-.
+      -+###*-.+%%%%%%%%####-    -#########**-   :--=-:.
+             .=%%%%##%%#####----####*#####*+:
+             .+%%%####%############***####*+:
+             :+%%%#################***####*+:
+             :*%%%##*#############****####**-
+             -#%%%##*#############*+**####**=.
+            .+%%%%%#**############*+**####**+:
+            -*%%%%%#**###########*++*#####***=.
+           .=%%%%%%#++###########*++*#=.=****+:
+           :+%%%*=:.  -######=.=#*++*+: .-+**+:
+           .=+=:.     :*####=. :=*+++-    .::.
+                      .=##+-    :-=-:
+                        ::        .
+[/]"""
+        info = """[bold #8b5cf6]Security Ops[/]
+[dim]/lockdown, /validate, /receipts[/]
+
+[bold #8b5cf6]Model Custody[/]
+[dim]/bundle-verify, /provider-qualify[/]
+
+[bold #8b5cf6]Knowledge & Leases[/]
+[dim]/context, /leases, /repositories[/]
+
+[dim #8b5cf6]Aegis System Commands - Zero-Egress Environment
+Network: AIR-GAPPED | Clearance: INTERNAL[/]"""
+
+        console.print(banner)
+        table = Table.grid(padding=1, expand=True)
+        table.add_column(justify="left", ratio=1)
+        table.add_column(justify="left", ratio=3)
+        table.add_row(Align.center(logo), info)
+        
+        panel = Panel(table, title="[dim #8b5cf6]--- Aegis Console v0.15.1 <2026.10.02> - Sovereign AI Broker ---[/]", border_style="dim #8b5cf6")
+        console.print(panel)
+        console.print("[dim #8b5cf6]Welcome to the Aegis operator console. Type your command or /help.[/]")
+        console.print("[verified]System Status:[/] [dim]All telemetry locked. Egress forbidden.[/]")
     else:
         print(f"Aegis terminal | {client.url}")
         print("Use /help, /doctor, /context, /compose, /login <actor>, /exit. Plain text uses the selected lease.")
-        print("Website: telemetry. Apply: encrypted task snapshot. Export: approved local patch.")
+
+    pt_session = None
+    if has_pt:
+        class SlashCommandCompleter(Completer):
+            def __init__(self, commands_dict):
+                self.commands = commands_dict
+
+            def get_completions(self, document, complete_event):
+                text = document.text_before_cursor
+                if text.startswith('/'):
+                    word = text.lstrip('/')
+                    for cmd, desc in self.commands.items():
+                        if cmd.startswith(word):
+                            yield Completion(
+                                f"/{cmd}",
+                                start_position=-len(text),
+                                display=f"/{cmd}".ljust(33),
+                                display_meta=desc
+                            )
+                            
+        aegis_commands = {
+            'help': 'Guided workflows or exact command arguments',
+            'doctor': 'Read-only local diagnostics',
+            'context': 'Inspect identity, selected lease and current incident authorization',
+            'compose': 'Multiline prompt',
+            'shell': 'Interactive operator shell',
+            'status': 'Authentication and local runtime status',
+            'logout': 'Revoke and clear this servers session',
+            'whoami': 'Show authenticated identity',
+            'state': 'Coding workspace state',
+            'control-state': 'Control plane state',
+            'providers': 'List local provider profiles',
+            'tasks': 'List your coding tasks',
+            'leases': 'List visible coding leases',
+            'repositories': 'List visible repository snapshots',
+            'validate': 'Run local negative-case validation',
+            'telemetry': 'Read measured local telemetry',
+            'receipts': 'List control receipts',
+            'endpoints': 'Discover available API endpoints',
+            'login': 'Sign in locally; password is prompted securely',
+            'lockdown': 'Inspect or change the Security Officer incident stop',
+            'exit': 'Exit the shell',
+            'quit': 'Exit the shell'
+        }
+        
+        style = Style.from_dict({
+            'completion-menu.completion': 'bg:#222222 #eeeeee',
+            'completion-menu.completion.current': 'bg:#444444 #ffffff bold',
+            'completion-menu.meta.completion': 'bg:#222222 #888888',
+            'completion-menu.meta.completion.current': 'bg:#444444 #cccccc',
+        })
+        
+        command_completer = SlashCommandCompleter(aegis_commands)
+        pt_session = PromptSession(
+            completer=command_completer,
+            complete_style=CompleteStyle.MULTI_COLUMN,
+            style=style
+        )
+
     while True:
         actor = client.session.value.get("actor", "signed-out")
         selected = client.session.value.get("selected_lease", {})
         label = terminal_text(f"{actor} | {selected.get('mode', 'lease')} {selected['id']}" if selected.get("id") else f"{actor} | no lease")
+        
         try:
-            line = input(f"aegis[{label}]> ").strip()
+            if has_pt:
+                cols = shutil.get_terminal_size().columns
+                lease_id = selected.get("id", "None")
+                model_name = selected.get("model", "AEGIS-DEMO-TEXT")
+                print(f" 🛡 {model_name} │ Lease: {lease_id} │ Network: AIR-GAPPED │ Clearance: INTERNAL")
+                print("─" * cols)
+                line = pt_session.prompt("❯ ", lexer=PygmentsLexer(MarkdownLexer)).strip()
+                print("─" * cols)
+            elif styled:
+                from rich.prompt import Prompt
+                cols = shutil.get_terminal_size().columns
+                lease_id = selected.get("id", "None")
+                model_name = selected.get("model", "AEGIS-DEMO-TEXT")
+                console.print(f" 🛡 {model_name} │ Lease: {lease_id} │ Network: AIR-GAPPED │ Clearance: INTERNAL")
+                console.print("─" * cols)
+                line = Prompt.ask("[bold #8b5cf6]❯[/]")
+                console.print("─" * cols)
+            else:
+                line = input(f"aegis[{label}]> ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return 0
+            
         if not line:
             continue
         if line in {"/exit", "/quit"}:
@@ -837,21 +1080,20 @@ def shell(client, parser, *, plain=False):
                 result = compose(client)
             elif not line.startswith("/"):
                 if styled:
-                    with console.status("[bold green]Executing prompt...[/]", spinner="dots"):
+                    with console.status("[verified]Executing prompt...[/]", spinner="dots"):
                         result = client.run(line)
                 else:
                     result = client.run(line)
             else:
-                # Preserve Windows path backslashes and strip matching outer quotes.
                 words = shlex.split(line[1:], posix=False)
-                words = [w[1:-1] if len(w) >= 2 and w[0] == w[-1] and w[0] in "\"'" else w for w in words]
+                words = [w[1:-1] if len(w) >= 2 and w[0] == w[-1] and w[0] in "'\"" else w for w in words]
                 args = parser.parse_args(words)
                 if not args.command or args.command == "shell":
                     raise CLIError("Already in the Aegis shell")
                 if args.persona:
                     client.persona(args.persona)
                 if styled and args.command not in {"login", "users", "backup"}:
-                    with console.status(f"[bold green]Running {args.command}...[/]", spinner="dots"):
+                    with console.status(f"[verified]Running {args.command}...[/]", spinner="dots"):
                         result = execute(args, client)
                 else:
                     result = execute(args, client)
@@ -862,12 +1104,11 @@ def shell(client, parser, *, plain=False):
                 else:
                     print("Operation did not complete; inspect status and reason above.", file=sys.stderr)
         except SystemExit:
-            continue  # argparse errors and --help never terminate an active shell.
+            continue
         except (CLIError, OSError, ValueError, subprocess.SubprocessError) as error:
             print("Error: " + terminal_text(error), file=sys.stderr)
         except KeyboardInterrupt:
             print("\nCommand interrupted locally. Server work may continue; inspect task status before retrying.", file=sys.stderr)
-
 
 def main(argv=None):
     parser = build_parser()

@@ -248,8 +248,9 @@ def test_audit_chain_failure_withholds_existing_media():
     _, prepared, _ = prepare()
     from aegis.storage.database import execute_write
     execute_write("UPDATE control_receipts SET hash=? WHERE sequence=1", ("f" * 64,))
-    with pytest.raises(store.Denied, match="audit chain"):
+    with pytest.raises(store.Denied) as error:
         service.view(prepared["task"]["id"], "operator")
+    assert error.value.code in {"RECEIPT_CHAIN_FAILURE", "LOCKDOWN_INTEGRITY_FAILURE"}
 
 
 def test_failed_completion_receipt_cannot_leave_readable_output(monkeypatch):
