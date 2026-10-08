@@ -21,6 +21,8 @@ BUSY = threading.Lock()
 PATHS = [Path(__file__), Path(images.__file__), Path(inference.__file__), Path(providers.__file__),
          Path(tools.__file__), Path(policy.__file__), Path(capsules.__file__), Path(store.__file__), Path(lockdown.__file__),
          Path(provider_assurance.__file__), Path(model_qualification.__file__), Path(bundle_custody.__file__), Path(offline_bundle.__file__)]
+PATHS += [Path(__file__).parents[1] / "security" / (name + ".py") for name in (
+    "auth", "key_custody", "audit_anchor", "availability", "deployment", "attestor", "local_rpc", "quiescence", "private_files")]
 LOADED = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in PATHS}
 
 
@@ -112,20 +114,20 @@ def save(job):
 def read(job_id):
     job = store.require("media-job", job_id)
     body = {k: v for k, v in job.items() if k != "seal"}
-    if not isinstance(job.get("seal"), str) or not hmac.compare_digest(job["seal"], store.sign(body, "media-job")):
+    if not isinstance(job.get("seal"), str) or not store.verify_signature(body, "media-job", job["seal"]):
         raise store.Denied("MEDIA_INTEGRITY_FAILURE", "Media task was modified")
     return job
 
 
 def retain(job, payload):
     key = Fernet.generate_key()
-    job["wrapped_key"] = Fernet(store.encryption_key("media-retention")).encrypt(key).decode()
+    job["wrapped_key"] = store.encrypt("media-retention", key)
     job["ciphertext"] = Fernet(key).encrypt(store.canonical(payload).encode()).decode()
     return save(job)
 
 
 def payload(job):
-    key = Fernet(store.encryption_key("media-retention")).decrypt(job["wrapped_key"].encode())
+    key = store.decrypt("media-retention", job["wrapped_key"])
     value = json.loads(Fernet(key).decrypt(job["ciphertext"].encode()))
     if store.digest(value["request"]) != job["request_hash"]:
         raise store.Denied("MEDIA_INTEGRITY_FAILURE", "Media request content changed")

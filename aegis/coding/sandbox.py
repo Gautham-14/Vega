@@ -46,6 +46,15 @@ with tempfile.TemporaryFile() as output:
 
 
 def configuration():
+    if os.environ.get("AEGIS_SANDBOX_BROKER_SOCKET"):
+        try:
+            value = _broker({"operation": "status"})
+            if value.get("image") != os.environ.get("AEGIS_SANDBOX_IMAGE") or value.get("host_mounts") is not False or value.get("network") != "none":
+                raise ValueError("Validator configuration differs from its pin")
+            return {**value, "custody": "SEPARATE_OS_IDENTITY"}
+        except (OSError, ValueError, RuntimeError, KeyError):
+            return {"enabled": False, "image": None, "runtime": "runsc", "network": "none", "host_mounts": False,
+                    "commands": list(COMMANDS), "verified_isolation": False, "requirements": "Protected validation broker is unavailable or differs from its image pin"}
     image = os.environ.get("AEGIS_SANDBOX_IMAGE", "")
     enabled = (os.environ.get("AEGIS_SANDBOX_ENABLED") == "1" and platform.system() == "Linux"
                and shutil.which("docker") is not None and bool(re.fullmatch(r"sha256:[a-f0-9]{64}", image)))
@@ -62,6 +71,12 @@ def execute(files, command):
         raise store.Denied("SANDBOX_UNAVAILABLE", settings["requirements"])
     if command not in COMMANDS:
         raise store.Denied("UNAUTHORIZED_TOOL", "Only fixed test, lint and typecheck commands are permitted")
+    if os.environ.get("AEGIS_SANDBOX_BROKER_SOCKET"):
+        result = _broker({"operation": "execute", "files": files, "command": command})
+        if (result.get("command") != command or result.get("image") != settings["image"]
+            or result.get("runtime") != "runsc" or result.get("trust") != "UNTRUSTED_TOOL_OUTPUT"):
+            raise store.Denied("SANDBOX_EXECUTION_FAILED", "Validator returned unbound results")
+        return result
     name = "aegis-task-" + uuid.uuid4().hex
     docker = shutil.which("docker")
     # Ignore inherited Docker contexts/hosts; require the local Linux engine.
@@ -127,3 +142,8 @@ def execute(files, command):
         except (OSError, subprocess.TimeoutExpired):
             store.event("SANDBOX_CLEANUP_FAILED", name)
             raise store.Denied("SANDBOX_CLEANUP_FAILED", "Sandbox removal could not be confirmed; result withheld") from None
+
+
+def _broker(request):
+    from aegis.security.local_rpc import call
+    return call(os.environ["AEGIS_SANDBOX_BROKER_SOCKET"], int(os.environ["AEGIS_SANDBOX_BROKER_UID"]), request, timeout=120)

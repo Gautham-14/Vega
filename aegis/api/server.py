@@ -40,43 +40,49 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize empty local storage on server start."""
-    init_db()
-    init_control()
-    auth.init_auth()
-    telemetry.init_telemetry()
-    async def retention_worker():
-        from aegis.control.artifacts import sweep
-        from aegis.coding.service import sweep as sweep_coding
-        from aegis.media.service import sweep as sweep_media
-        while True:
-            try:
-                await asyncio.to_thread(sweep)
-                await asyncio.to_thread(sweep_coding)
-                await asyncio.to_thread(sweep_media)
-            except Exception:
-                logging.getLogger("aegis.retention").error("Retention sweep failed; inspect the local security ledger")
-            await asyncio.sleep(30)
-    async def telemetry_worker():
-        while True:
-            try:
-                await asyncio.to_thread(telemetry.sample)
-            except Exception:
-                logging.getLogger("aegis.telemetry").error("Local telemetry sampling failed")
-            await asyncio.sleep(3)
-    workers = [asyncio.create_task(retention_worker()), asyncio.create_task(telemetry_worker())]
-    try:
-        yield
-    finally:
-        for worker in workers:
-            worker.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await worker
+    """Initialize empty local storage under an exclusive runtime lock."""
+    from aegis.security.quiescence import exclusive
+    with exclusive("starting another runtime"):
+        init_db()
+        init_control()
+        auth.init_auth()
+        telemetry.init_telemetry()
+        from aegis.security.deployment import validate
+        validate()
+        async def retention_worker():
+            from aegis.control.artifacts import sweep
+            from aegis.coding.service import sweep as sweep_coding
+            from aegis.media.service import sweep as sweep_media
+            while True:
+                try:
+                    await asyncio.to_thread(sweep)
+                    await asyncio.to_thread(sweep_coding)
+                    await asyncio.to_thread(sweep_media)
+                    from aegis.security.availability import maintenance
+                    await asyncio.to_thread(maintenance)
+                except Exception:
+                    logging.getLogger("aegis.retention").error("Retention sweep failed; inspect the local security ledger")
+                await asyncio.sleep(30)
+        async def telemetry_worker():
+            while True:
+                try:
+                    await asyncio.to_thread(telemetry.sample)
+                except Exception:
+                    logging.getLogger("aegis.telemetry").error("Local telemetry sampling failed")
+                await asyncio.sleep(3)
+        workers = [asyncio.create_task(retention_worker()), asyncio.create_task(telemetry_worker())]
+        try:
+            yield
+        finally:
+            for worker in workers:
+                worker.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await worker
 
 app = FastAPI(
     title="Aegis Sovereign AI Runtime",
     description="Self-Defending Sovereign Industrial AI Runtime Environment",
-    version="1.0.0-prototype",
+    version="1.0.0",
     docs_url=None,
     redoc_url=None,
     lifespan=lifespan
@@ -109,15 +115,18 @@ async def protect_local_mutations(request: Request, call_next):
     if not valid_host:
         return JSONResponse({"detail": "Invalid host header"}, status_code=400)
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-        origin = request.headers.get("origin")
+        origins = request.headers.getlist("origin")
+        origin = origins[0] if len(origins) == 1 else None
         same_origin = True
         if origin:
             try:
                 parsed = urlsplit(origin)
-                same_origin = (parsed.scheme, parsed.netloc) == (request.url.scheme, request.url.netloc)
+                same_origin = ((parsed.scheme, parsed.netloc) == (request.url.scheme, request.url.netloc)
+                               and not (parsed.path or parsed.query or parsed.fragment)
+                               and parsed.username is None and parsed.password is None)
             except ValueError:
                 same_origin = False
-        if not same_origin or request.headers.get("sec-fetch-site") == "cross-site":
+        if len(origins) > 1 or not same_origin or request.headers.get("sec-fetch-site") == "cross-site":
             return JSONResponse({"detail": "Cross-origin mutations are not allowed"}, status_code=403)
     path = request.url.path
     public_status = {"/api/auth/status", "/api/auth/login", "/api/control/status", "/api/coding/status"}
@@ -125,19 +134,28 @@ async def protect_local_mutations(request: Request, call_next):
         try:
             await asyncio.to_thread(auth.authenticate, request)
             await asyncio.to_thread(auth.authorize_legacy, request)
+            await asyncio.to_thread(auth.require_step_up, request)
         except HTTPException as error:
             return JSONResponse({"detail": error.detail}, status_code=error.status_code,
                                 headers={"Cache-Control": "no-store"})
         except Denied as error:
             return JSONResponse({"detail": str(error), "code": error.code}, status_code=403)
     started = time.monotonic()
-    response = await call_next(request)
-    response.headers["Content-Security-Policy"] = ("default-src 'self'; connect-src 'self'; "
-        "script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
-        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    response.headers["X-Frame-Options"] = "DENY"
+    from aegis.security.availability import admit, actor_context
+    token = actor_context.set(getattr(request.state, "actor", "anonymous"))
+    admission = admit("http", actor_context.get())
+    try:
+        await asyncio.to_thread(admission.__enter__)
+    except HTTPException as error:
+        actor_context.reset(token)
+        return JSONResponse({"detail": error.detail}, status_code=error.status_code, headers=error.headers)
+    try:
+        response = await call_next(request)
+    finally:
+        try:
+            await asyncio.to_thread(admission.__exit__, None, None, None)
+        finally:
+            actor_context.reset(token)
     if path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
         # Store only route templates, never path arguments, queries or request bodies.
@@ -149,6 +167,21 @@ async def protect_local_mutations(request: Request, call_next):
                                         (time.monotonic() - started) * 1000)
             except Exception:
                 logging.getLogger("aegis.telemetry").error("Local request metrics unavailable")
+    return response
+
+
+@app.middleware("http")
+async def secure_response_headers(request: Request, call_next):
+    # Outermost middleware covers early authentication, host and body rejections.
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = ("default-src 'self'; connect-src 'self'; "
+        "script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
+        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Frame-Options"] = "DENY"
+    if request.scope.get("path", "").startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 # Register API Routers

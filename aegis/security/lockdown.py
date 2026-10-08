@@ -2,6 +2,7 @@
 import hmac
 import json
 import time
+import os
 
 from aegis.control import policy, store
 from aegis.storage.database import query_one
@@ -23,7 +24,7 @@ def status():
         if (value is None or latest is None or type(body.get("enabled")) is not bool
                 or type(body.get("generation")) is not int or body["generation"] < 1
                 or not isinstance(value.get("seal"), str)
-                or not hmac.compare_digest(value["seal"], store.sign(body, "execution-lockdown"))
+                or not store.verify_signature(body, "execution-lockdown", value["seal"])
                 or json.loads(latest["body"]).get("state_hash") != store.digest(body)):
             raise store.Denied("LOCKDOWN_INTEGRITY_FAILURE", "Incident-control state is missing or changed; execution is withheld")
         return body
@@ -45,10 +46,27 @@ def change(enabled, identity):
     with store.LOCK:
         previous = status()
         if previous["enabled"] == enabled:
+            if enabled:
+                _stop_supervised()
             return previous
         body = {"enabled": enabled, "generation": previous["generation"] + 1,
                 "changed_at": time.time(), "changed_by": identity, "scope": "APPLICATION_EXECUTION_ONLY"}
         # A crash between these durable writes produces a mismatch and blocks work.
         store.receipt(ACTION, identity, state_hash=store.digest(body), enabled=enabled, generation=body["generation"])
         store.put("execution-lockdown", "global", {**body, "seal": store.sign(body, "execution-lockdown")})
+        if enabled:
+            _stop_supervised()
         return body
+
+
+def _stop_supervised():
+    if os.environ.get("AEGIS_ATTESTOR_SOCKET"):
+        from aegis.security.attestor import remote
+        try:
+            result = remote("stop-all")
+            if result.get("stopped") is not True:
+                raise RuntimeError("Supervisor reported incomplete process termination")
+        except (OSError, RuntimeError, ValueError, KeyError):
+            # The durable application lockdown stays enabled even if termination
+            # fails. A repeated enable retries stopping, never silently reports it.
+            raise store.Denied("MODEL_STOP_UNCONFIRMED", "Execution is locked, but supervised model termination could not be confirmed") from None

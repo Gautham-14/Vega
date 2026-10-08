@@ -23,6 +23,8 @@ IMPLEMENTATION_PATHS = [Path(__file__), Path(providers.__file__), Path(tools.__f
                         Path(data.__file__), Path(policy.__file__), Path(store.__file__), Path(sandbox.__file__),
                         Path(retrieval.__file__), Path(git_workspace.__file__), Path(tokenizer.__file__), Path(embedding.__file__), Path(lockdown.__file__),
                         Path(provider_assurance.__file__), Path(model_qualification.__file__), Path(bundle_custody.__file__), Path(offline_bundle.__file__)]
+IMPLEMENTATION_PATHS += [Path(__file__).parents[1] / "security" / (name + ".py") for name in (
+    "auth", "key_custody", "audit_anchor", "availability", "deployment", "attestor", "local_rpc", "quiescence", "validation_broker", "private_files")]
 LOADED_IMPLEMENTATION = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in IMPLEMENTATION_PATHS}
 
 
@@ -35,7 +37,7 @@ def sealed(kind, value):
 def verified(kind, identity):
     value = store.require("coding-" + kind, identity)
     body = {k: v for k, v in value.items() if k != "seal"}
-    if not hmac.compare_digest(value.get("seal", ""), store.sign(body, "coding:" + kind)):
+    if not store.verify_signature(body, "coding:" + kind, value.get("seal", "")):
         raise store.Denied("CODING_INTEGRITY_FAILURE", "Coding record was modified")
     return value
 
@@ -79,7 +81,7 @@ def add_repository(name, files, compartment, classification, identity):
     tools.inspect_text(name, [compartment])
     value = {"id": store.uid("REPO"), "name": name, "label": label, "owner": identity,
              "content_hash": store.digest(files), "file_count": len(files), "created_at": time.time()}
-    value["ciphertext"] = Fernet(store.encryption_key("coding-repository:" + compartment)).encrypt(store.canonical(files).encode()).decode()
+    value["ciphertext"] = store.encrypt("coding-repository:" + compartment, store.canonical(files).encode())
     with store.LOCK:
         store.receipt("CODING_REPOSITORY_IMPORTED", identity, repository_id=value["id"], content_hash=value["content_hash"], label=label)
         return public(sealed("repository", value))
@@ -153,7 +155,7 @@ def revoke(lease_id, identity):
 
 def retain(task, payload):
     key = Fernet.generate_key()
-    task["wrapped_key"] = Fernet(store.encryption_key("coding-retention")).encrypt(key).decode()
+    task["wrapped_key"] = store.encrypt("coding-retention", key)
     task["ciphertext"] = Fernet(key).encrypt(store.canonical(payload).encode()).decode()
     task["content_hash"] = store.digest(payload)
     return sealed("task", task)
@@ -191,7 +193,7 @@ def run(lease_id, prompt, purpose, identity, parent_task_id=None):
         tools.inspect_text(prompt, compartments)
         task_key = capsules.TaskKey(lease["capsule_id"], measured, POLICY_STATE)
         task_key.cipher()  # decryption gate, shared with the control-plane pipeline
-        files = json.loads(Fernet(store.encryption_key("coding-repository:" + compartments[0])).decrypt(repository["ciphertext"].encode()))
+        files = json.loads(store.decrypt("coding-repository:" + compartments[0], repository["ciphertext"]))
         if store.digest(files) != repository["content_hash"]:
             raise store.Denied("CODING_INTEGRITY_FAILURE", "Snapshot content hash differs")
         if parent_task_id:
@@ -313,7 +315,7 @@ def task_payload(task, identity):
         raise store.Denied("TASK_HYGIENE_FAILURE", "Task cleanup must finish before content is released")
     if not task.get("wrapped_key") or not task.get("ciphertext"):
         raise store.Denied("TASK_CLOSED", "Task content is no longer retained")
-    key = Fernet(store.encryption_key("coding-retention")).decrypt(task["wrapped_key"].encode())
+    key = store.decrypt("coding-retention", task["wrapped_key"])
     payload = json.loads(Fernet(key).decrypt(task["ciphertext"].encode()))
     if store.digest(payload) != task["content_hash"]:
         raise store.Denied("CODING_INTEGRITY_FAILURE", "Retained task content changed")

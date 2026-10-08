@@ -8,7 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 from starlette.testclient import TestClient
-import aegis_cli as cli
+from aegis import cli
 from aegis.api.limits import RequestBodyLimit
 from aegis.api.server import app
 from aegis.control import store
@@ -21,6 +21,8 @@ def test_environment_cannot_create_a_default_account(monkeypatch):
 
 
 def test_shell_never_attempts_silent_login(monkeypatch):
+    import sys
+    monkeypatch.setitem(sys.modules, "prompt_toolkit", None)
     client = Mock(url=cli.BASE_URL, session=SimpleNamespace(value={}))
     monkeypatch.setattr(cli, "has_rich", False)
     monkeypatch.setattr("builtins.input", lambda prompt: "/exit")

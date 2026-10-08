@@ -1,7 +1,7 @@
 """Signed purpose leases. All dimensions are checked again before export."""
 import hmac
 import time
-from aegis.control.store import Denied, uid, sign, put, require, receipt
+from aegis.control.store import verify_signature, Denied, uid, sign, put, require, receipt
 from aegis.control.policy import actor, authorize_label, SKILLS
 
 FIELDS = {"source_ids", "compartments", "purpose", "capsule_id", "skill", "user", "role", "expires_at",
@@ -48,7 +48,7 @@ def validate(lease_id, *, user, capsule_id, skill, purpose, source_ids, compartm
     from aegis.security import lockdown
     lockdown.check(value.get("lockdown_generation", 0))
     body = {k: v for k, v in value.items() if k != "signature"}
-    if not hmac.compare_digest(value["signature"], sign(body, "purpose-lease")):
+    if not verify_signature(body, "purpose-lease", value["signature"]):
         raise Denied("INVALID_LEASE_SIGNATURE", "Purpose lease was modified", lease_id)
     if value["expires_at"] <= time.time():
         raise Denied("EXPIRED_PURPOSE_LEASE", "Purpose lease has expired", lease_id)

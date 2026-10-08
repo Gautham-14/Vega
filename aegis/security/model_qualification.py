@@ -117,7 +117,7 @@ def qualification(qualification_id: str) -> dict:
     value = store.require("provider-qualification", qualification_id)
     body = {key: item for key, item in value.items() if key != "seal"}
     if (not isinstance(value.get("seal"), str)
-            or not hmac.compare_digest(value["seal"], store.sign(body, "provider-qualification-v1"))):
+            or not store.verify_signature(body, "provider-qualification-v1", value["seal"])):
         raise store.Denied("QUALIFICATION_INTEGRITY_FAILURE", "Qualification record was modified", qualification_id)
     return body
 

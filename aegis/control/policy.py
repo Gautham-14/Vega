@@ -5,7 +5,7 @@ import json
 import logging
 import hmac
 from pathlib import Path
-from aegis.control.store import Denied, LOCK, digest, require, put, receipt, uid, sign, get
+from aegis.control.store import Denied, LOCK, digest, require, put, receipt, uid, sign, verify_signature, get
 
 POLICY_VERSION = "aegis-prototype-2"
 COMPARTMENTS = ["Engineering", "Maintenance", "Finance", "HR", "Public"]
@@ -99,7 +99,7 @@ def actor(identity, roles=None):
         if profile:
             body = {key: item for key, item in profile.items() if key != "seal"}
             if (body.get("id") != identity or not isinstance(profile.get("seal"), str)
-                    or not hmac.compare_digest(profile["seal"], sign(body, "account-profile-v1"))):
+                    or not verify_signature(body, "account-profile-v1", profile["seal"])):
                 raise Denied("ACCOUNT_PROFILE_INTEGRITY_FAILURE", "Local account role binding changed")
             value = ACTORS.get(body.get("template"))
     if not value or (roles and value["role"] not in roles):
@@ -163,7 +163,7 @@ def _read_approval(identity):
     value = require("approval", identity)
     body = {k: v for k, v in value.items() if k != "seal"}
     if (value.get("id") != identity or not isinstance(value.get("seal"), str)
-            or not hmac.compare_digest(value["seal"], sign(body, "approval-v1"))
+            or not verify_signature(body, "approval-v1", value["seal"])
             or value.get("required_roles") != list(APPROVAL_ROLES.get(value.get("action"), ()))):
         raise Denied("APPROVAL_INTEGRITY_FAILURE", "Approval changed or predates authenticated approvals; request a new review", identity)
     return value

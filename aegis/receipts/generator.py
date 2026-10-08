@@ -87,19 +87,9 @@ def generate_sovereignty_receipt(task_record: Dict[str, Any], final_artifact_con
         }
     }
 
-    # Hardware-Backed Receipt Signing (TPM Integration)
-    def sign_with_tpm(data_hash: str) -> str:
-        """Simulates TPM/Windows DPAPI hardware-bound signing for the prototype."""
-        import platform
-        # If we were strictly on Windows, we'd use CryptProtectData here
-        if platform.system() == "Windows":
-            return compute_sha256(data_hash + "TPM_HARDWARE_BOUND_SECRET_WINDOWS")
-        return compute_sha256(data_hash + "TPM_HARDWARE_BOUND_SECRET_POSIX")
-
-    # Compute Receipt Self Hash
+    # This is a portable self-hash, not a TPM signature or authentication.
     receipt_json_str = json.dumps(receipt_dict, indent=2, sort_keys=True)
-    raw_hash = compute_sha256(receipt_json_str)
-    receipt_hash = sign_with_tpm(raw_hash)
+    receipt_hash = compute_sha256(receipt_json_str)
     receipt_dict["receipt_sha256"] = receipt_hash
 
     # Save JSON file

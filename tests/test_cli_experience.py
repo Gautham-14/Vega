@@ -8,7 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 
-import aegis_cli as cli
+from aegis import cli
 
 
 def test_help_is_available_without_opening_session_or_server(monkeypatch, capsys):
@@ -136,6 +136,8 @@ def test_multiline_enforces_budget_and_clear(monkeypatch, capsys):
 
 
 def test_shell_help_and_compose_preserve_dispatch_and_do_not_save_history(monkeypatch, capsys):
+    import sys
+    monkeypatch.setitem(sys.modules, "prompt_toolkit", None)
     client = Mock(url=cli.BASE_URL, session=SimpleNamespace(value={}))
     client.run.return_value = {"status": "COMPLETED"}
     lines(monkeypatch, ["/help coding", "/compose", "hello", "/send", "/exit"])

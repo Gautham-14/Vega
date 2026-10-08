@@ -8,7 +8,7 @@ import time
 from datetime import date
 from cryptography.fernet import Fernet
 from aegis import config
-from aegis.control.store import Denied, canonical, digest, encryption_key, get, put, require, receipt, sign, uid, event, all_objects
+from aegis.control.store import Denied, canonical, digest, encrypt, decrypt, verify_signature, get, put, require, receipt, sign, uid, event, all_objects
 from aegis.control.policy import COMPARTMENTS, LEVELS, SKILLS, actor, label
 from aegis.storage.paths import contained_file
 
@@ -32,8 +32,7 @@ def add_source(spec, identity):
         raise ValueError("Every field needs one explicit disclosure rule")
     body = dict(spec)
     fields = body.pop("fields")
-    cipher = Fernet(encryption_key("source:" + spec["compartment"]))
-    body["ciphertext"] = cipher.encrypt(canonical(fields).encode()).decode()
+    body["ciphertext"] = encrypt("source:" + spec["compartment"], canonical(fields).encode())
     body["content_hash"] = digest(fields)
     body["namespace"] = "index:" + spec["compartment"]
     body["key_ref"] = "department-key-" + digest(spec["compartment"])[:16]
@@ -49,7 +48,7 @@ def public_source(value):
 
 def source_current(value, skill, equipment):
     unsigned = {k: v for k, v in value.items() if k != "seal"}
-    if not hmac.compare_digest(value.get("seal", ""), sign(unsigned, "source")):
+    if not verify_signature(unsigned, "source", value.get("seal", "")):
         raise Denied("SOURCE_INTEGRITY_FAILURE", "Source metadata or encrypted content changed", value["id"])
     if value["status"] == "SUPERSEDED":
         raise Denied("SUPERSEDED_SOURCE", "Superseded source cannot enter inference", value["id"])
@@ -70,7 +69,7 @@ def source_current(value, skill, equipment):
 def disclose(source, task_key):
     # Require successful attestation and a live key before decrypting protected fields.
     task_key.cipher()
-    fields = json.loads(Fernet(encryption_key("source:" + source["compartment"])).decrypt(source["ciphertext"].encode()))
+    fields = json.loads(decrypt("source:" + source["compartment"], source["ciphertext"]))
     if digest(fields) != source["content_hash"]:
         raise Denied("SOURCE_INTEGRITY_FAILURE", "Decrypted source hash mismatch", source["id"])
     visible, protected, restoration = {}, {}, {}

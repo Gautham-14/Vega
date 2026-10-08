@@ -17,6 +17,8 @@ from pathlib import Path
 import re
 import stat
 
+from aegis.security.private_files import no_links
+
 from aegis.control import store
 from aegis.storage.paths import safe_filename
 from aegis.coding.tokenizer import get_tokens
@@ -64,8 +66,10 @@ def _model_root(directory):
     # Reject network shares and relative model names before filesystem access.
     if not isinstance(directory, str) or not directory or directory.startswith(("\\\\", "//")):
         raise ValueError("An absolute local model directory is required")
-    path = Path(directory)
-    if not path.is_absolute() or path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+    if not Path(directory).is_absolute():
+        raise ValueError("An absolute local model directory is required")
+    path = no_links(directory)
+    if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
         raise ValueError("The model directory must be a real local directory")
     for part in (path, *path.parents):
         info = part.lstat()
@@ -86,12 +90,16 @@ def model_digest(directory):
     """
     root = _model_root(directory)
     entries, total, visited = [], 0, 0
-    for parent, directories, files in os.walk(root, followlinks=False):
+    def unreadable(error):
+        raise ValueError("Model inventory could not be completely read") from error
+
+    for parent, directories, files in os.walk(root, followlinks=False, onerror=unreadable):
         visited += 1
         if visited > 128:
             raise ValueError("Model tree exceeds directory limit")
         for name in sorted(directories + files):
             path = Path(parent) / name
+            no_links(path)
             details = path.lstat()
             if (path.is_symlink() or getattr(path, "is_junction", lambda: False)()
                     or getattr(details, "st_file_attributes", 0) & 0x400

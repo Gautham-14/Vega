@@ -11,6 +11,16 @@ from aegis.security import media_qualification
 router = APIRouter(prefix="/api/providers", tags=["Local model providers"])
 
 
+@router.post("/{provider_id}/attest-supervised")
+def supervised_attestation(provider_id: str, identity=Depends(principal)):
+    return provider_assurance.import_supervised_attestation(provider_id, identity)
+
+
+@router.post("/{provider_id}/refresh-supervised")
+def supervised_refresh(provider_id: str, identity=Depends(principal)):
+    return provider_assurance.refresh_supervised_attestation(provider_id, identity)
+
+
 @router.get("")
 def catalog(identity=Depends(principal)):
     return providers.catalog(identity)

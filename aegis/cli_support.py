@@ -4,14 +4,14 @@ import re
 
 GUIDES = {
     "quickstart": [
-        "Welcome to Aegis CLI! Here is a simple guide to get started:",
-        "1. Create an account: users set <your-username>",
-        "2. Sign in: login <your-username>",
-        "3. Import a workspace/repository: import <directory-path> --name <workspace-name>",
-        "4. Create a task/lease: lease --repo <workspace-name> --capsule <capsule-id> --recipient <your-username>",
-        "5. Use the lease: use <lease-id>",
-        "6. Run a prompt: run <your prompt text>",
-        "For more details, type: help start",
+        "Host administrator: users set <name> --like operator; provision data-owner, model-custodian and security-officer accounts separately",
+        "Sign in as Data Owner: import <directory> --name <workspace-name>; note the returned repository ID",
+        "Sign in as Operator: register reference for the deterministic fixture, or a registered live provider ID",
+        "Model Custodian and Security Officer each: approve <approval-id> approve; Model Custodian: activate <capsule-id> <approval-id>",
+        "Data Owner: lease --repo <repository-id> --capsule <capsule-id> --recipient <operator-account> --mode PLAN",
+        "Operator: use <lease-id>, then run <prompt>; help coding describes EXECUTE and export review",
+        "Live providers need a separate approved release before receiving INTERNAL data; see help models",
+        "Use help <command> for exact arguments and help start for diagnostics",
     ],
     "start": [
         "doctor — inspect local API, identity, lockdown, receipts and image dependencies",

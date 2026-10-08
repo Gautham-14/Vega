@@ -13,6 +13,10 @@ data/
 *.log
 control.key
 control.key.dpapi
+control.keys.json
+control.keys.dpapi
+*.private.pem
+*.keyring
 *.enc
 *.aegis-backup
 

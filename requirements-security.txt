@@ -1,0 +1,3 @@
+# Build/CI tools only; keep outside the offline runtime environment.
+pip-audit>=2.9.0
+bandit>=1.8.0

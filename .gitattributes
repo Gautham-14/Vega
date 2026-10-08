@@ -2,3 +2,7 @@
 /Aegis.command text eol=lf
 /run_all.bat text eol=crlf
 /Aegis.bat text eol=crlf
+*.py text eol=lf
+*.lock text eol=lf
+*.yml text eol=lf
+deploy/systemd/* text eol=lf

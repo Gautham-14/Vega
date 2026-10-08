@@ -43,7 +43,7 @@ def _db_snapshot() -> bytes:
         return target.serialize()
 
 
-def _valid_database(raw: bytes, secret: bytes) -> None:
+def _valid_database(raw: bytes, secret: bytes, keyring=None) -> None:
     if len(secret) != 32 or len(raw) > MAX_PLAINTEXT:
         raise ValueError("Backup key or database is invalid")
     with sqlite3.connect(":memory:") as conn:
@@ -61,7 +61,7 @@ def _valid_database(raw: bytes, secret: bytes) -> None:
             head = conn.execute("SELECT * FROM control_head WHERE singleton=1").fetchone()
         except sqlite3.DatabaseError as error:
             raise ValueError("Backup database is invalid") from error
-    if not store.verify_rows(rows, head, secret):
+    if not store.verify_rows(rows, head, secret, keyring=keyring):
         raise ValueError("Backup receipt chain is invalid")
 
 
@@ -92,15 +92,23 @@ def _managed_files() -> dict[str, dict[str, str | int]]:
 
 
 def _payload() -> bytes:
-    if not (config.DATA_DIR / "control.key").is_file() and not (config.DATA_DIR / "control.key.dpapi").is_file():
+    from aegis.security.key_custody import local_path, load
+    recovery_ring = os.environ.get("AEGIS_RECOVERY_KEYRING") if os.environ.get("AEGIS_KEY_BROKER_SOCKET") else None
+    if os.environ.get("AEGIS_KEY_BROKER_SOCKET") and not recovery_ring:
+        raise ValueError("Stop services and supply the separately backed-up broker keyring with AEGIS_RECOVERY_KEYRING for an offline recovery archive")
+    ring = load(recovery_ring or local_path()) if recovery_ring or local_path().exists() else None
+    if ring is None and not (config.DATA_DIR / "control.key").is_file() and not (config.DATA_DIR / "control.key.dpapi").is_file():
         raise ValueError("Live control key is missing; refuse to create a new key during backup")
-    secret = store.secret()
+    secret = (base64.b64decode(ring.value["legacy"]) if ring and ring.value["legacy"] else
+              bytes(32) if ring else store.secret())
     database = _db_snapshot()
-    _valid_database(database, secret)
+    _valid_database(database, secret, ring)
     payload = {"version": 1, "created_at": int(time.time()),
                "database_sha256": hashlib.sha256(database).hexdigest(),
                "database": base64.b64encode(database).decode(),
                "control_key": base64.b64encode(secret).decode(), "files": _managed_files()}
+    if ring:
+        payload["custody_keyring"] = ring.value
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     if len(raw) > MAX_PLAINTEXT:
         raise ValueError("Operational state exceeds the bounded backup limit")
@@ -113,7 +121,9 @@ def create_backup(path: str | Path, passphrase: str) -> dict:
         raise ValueError("Store encrypted backups outside the live Aegis data directory")
     if not destination.parent.is_dir():
         raise ValueError("Backup destination directory does not exist")
-    raw = _payload()
+    from aegis.security.quiescence import exclusive
+    with exclusive("creating a coherent recovery archive"):
+        raw = _payload()
     salt, nonce = os.urandom(16), os.urandom(12)
     encrypted = MAGIC + salt + nonce + AESGCM(_key(passphrase, salt)).encrypt(nonce, raw, MAGIC)
     fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -130,7 +140,7 @@ def create_backup(path: str | Path, passphrase: str) -> dict:
         destination.unlink(missing_ok=True)
         raise
     verify_backup(destination, passphrase)
-    protection = store.protect_secret()
+    protection = "INDEPENDENT_BROKER" if os.environ.get("AEGIS_KEY_BROKER_SOCKET") else store.protect_secret()
     return {"path": str(destination), "sha256": hashlib.sha256(encrypted).hexdigest(),
             "bytes": len(encrypted), "scope": "database, control key, knowledge, receipts, artifacts",
             "live_key_protection": protection}
@@ -159,8 +169,12 @@ def _decode_backup(path: str | Path, passphrase: str) -> tuple[bytes, dict[str, 
         secret = base64.b64decode(payload["control_key"], validate=True)
         if hashlib.sha256(db).hexdigest() != payload["database_sha256"]:
             raise ValueError
-        _valid_database(db, secret)
+        from aegis.security.key_custody import Keyring
+        ring = Keyring(payload["custody_keyring"]) if "custody_keyring" in payload else None
+        _valid_database(db, secret, ring)
         files = {"db/aegis.db": db, "control.key": secret}
+        if ring:
+            files["control.keys.json"] = store.canonical(ring.value).encode()
         portable_paths = set()
         for name, entry in payload["files"].items():
             pure = PurePosixPath(name)
@@ -207,6 +221,8 @@ def _restore_files(files: dict[str, bytes]) -> dict[str, bytes]:
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
         if "auth_sessions" in tables:
             conn.execute("DELETE FROM auth_sessions")
+        if "admission_leases" in tables:
+            conn.execute("DELETE FROM admission_leases")
         if "control_objects" in tables:
             for kind, identity, raw in conn.execute("SELECT kind,id,body FROM control_objects WHERE kind IN ('approval','capsule','provider-release','provider-release-candidate')").fetchall():
                 value = json.loads(raw)
@@ -215,7 +231,9 @@ def _restore_files(files: dict[str, bytes]) -> dict[str, bytes]:
                 conn.execute("UPDATE control_objects SET body=? WHERE kind=? AND id=?", (store.canonical(value), kind, identity))
         conn.commit()
         result = {**files, "db/aegis.db": conn.serialize()}
-    _valid_database(result["db/aegis.db"], result["control.key"])
+    from aegis.security.key_custody import Keyring
+    ring = Keyring(json.loads(result["control.keys.json"])) if "control.keys.json" in result else None
+    _valid_database(result["db/aegis.db"], result["control.key"], ring)
     return result
 
 
@@ -232,6 +250,9 @@ def restore_backup(path: str | Path, destination: str | Path, passphrase: str) -
             if name == "control.key" and os.name == "nt":
                 from aegis.security.dpapi import protect
                 name, data = "control.key.dpapi", protect(data)
+            if name == "control.keys.json" and os.name == "nt":
+                from aegis.security.dpapi import protect
+                name, data = "control.keys.dpapi", protect(data)
             path_out = stage.joinpath(*PurePosixPath(name).parts)
             path_out.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             restrict_permissions(path_out.parent, directory=True)
@@ -268,16 +289,18 @@ def drill_backup(path: str | Path, destination: str | Path, passphrase: str) -> 
     target = no_links(destination)
     for name, original in expected.items():
         actual_name = name
-        if name == "control.key" and os.name == "nt":
+        if name in {"control.key", "control.keys.json"} and os.name == "nt":
             from aegis.security.dpapi import unprotect
-            actual_name = "control.key.dpapi"
+            actual_name = "control.key.dpapi" if name == "control.key" else "control.keys.dpapi"
             written = unprotect(no_links(target / actual_name).read_bytes())
         else:
             written = no_links(target.joinpath(*PurePosixPath(name).parts)).read_bytes()
         if hashlib.sha256(written).digest() != hashlib.sha256(original).digest():
             raise ValueError(f"Recovery drill found a changed restored file: {actual_name}")
     key = expected["control.key"]
-    _valid_database(no_links(target / "db" / "aegis.db").read_bytes(), key)
+    from aegis.security.key_custody import Keyring
+    ring = Keyring(json.loads(expected["control.keys.json"])) if "control.keys.json" in expected else None
+    _valid_database(no_links(target / "db" / "aegis.db").read_bytes(), key, ring)
     return {**result, "post_restore_verified": True, "receipt_chain_verified": True,
             "recovery_scope": "managed operational state; model weights and user exports excluded",
             "next_step": "Keep the fresh restore for login and representative-content checks; copy archives to separate offline media"}

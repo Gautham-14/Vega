@@ -1,6 +1,7 @@
 """Portable single-file names and containment checks for generated storage."""
 import re
 from pathlib import Path
+from aegis.security.private_files import no_links
 
 
 def safe_filename(value: str) -> str:
@@ -13,7 +14,8 @@ def safe_filename(value: str) -> str:
 
 
 def contained_file(directory: Path, filename: str) -> Path:
-    path = directory / safe_filename(filename)
+    directory = no_links(directory)
+    path = no_links(directory / safe_filename(filename))
     if path.is_symlink() or path.resolve().parent != directory.resolve():
         raise ValueError("File path escapes its storage directory")
     return path

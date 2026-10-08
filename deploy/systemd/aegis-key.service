@@ -1,0 +1,30 @@
+[Unit]
+Description=Aegis independent key custody
+
+[Service]
+User=aegis-key
+Group=aegis-custody
+WorkingDirectory=/opt/aegis
+EnvironmentFile=/etc/aegis/custody.env
+ExecStart=/opt/aegis/.venv/bin/python -m aegis.security.key_custody serve --keyring /var/lib/aegis-key/control.keyring --socket /run/aegis-key/service.sock --runtime-uid ${AEGIS_RUNTIME_UID}
+RuntimeDirectory=aegis-key
+RuntimeDirectoryMode=0750
+StateDirectory=aegis-key
+StateDirectoryMode=0700
+PrivateNetwork=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/var/lib/aegis-key /run/aegis-key
+InaccessiblePaths=/var/lib/aegis /var/lib/aegis-witness
+LimitCORE=0
+MemoryMax=256M
+TasksMax=16
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

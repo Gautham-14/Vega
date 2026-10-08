@@ -8,6 +8,7 @@ import secrets
 import threading
 import time
 import uuid
+import re
 
 from aegis import config
 from aegis.storage.database import get_db_connection, execute_write, query_all, query_one
@@ -48,6 +49,8 @@ def _requires_existing_key():
 def secret():
     # Local software trust root. Current-user DPAPI protects Windows copies at
     # rest; a compromised logged-in account or host administrator can still use it.
+    if os.environ.get("AEGIS_KEY_BROKER_SOCKET"):
+        raise RuntimeError("Production keys cannot be exported from the custody broker")
     path = config.DATA_DIR / "control.key"
     protected = config.DATA_DIR / "control.key.dpapi"
     with LOCK:
@@ -136,10 +139,52 @@ def protect_secret():
 
 
 def sign(value, domain):
+    if os.environ.get("AEGIS_KEY_BROKER_SOCKET"):
+        from aegis.security.key_custody import remote
+        return remote({"operation": "sign", "value": value, "domain": domain})
+    from aegis.security.key_custody import local_path, load
+    if local_path().exists():
+        return load(local_path()).sign(value, domain)
     return hmac.new(secret(), (domain + canonical(value)).encode(), hashlib.sha256).hexdigest()
 
 
+def verify_signature(value, domain, signature):
+    if not isinstance(signature, str) or not re.fullmatch(r"(?:[a-f0-9]{16}\.)?[a-f0-9]{64}", signature):
+        return False
+    if os.environ.get("AEGIS_KEY_BROKER_SOCKET"):
+        from aegis.security.key_custody import remote
+        return remote({"operation": "verify", "value": value, "domain": domain, "signature": signature}) is True
+    from aegis.security.key_custody import local_path, load
+    if local_path().exists():
+        return load(local_path()).verify(value, domain, signature)
+    return hmac.compare_digest(signature, sign(value, domain))
+
+
+def encrypt(namespace, raw):
+    if os.environ.get("AEGIS_KEY_BROKER_SOCKET"):
+        from aegis.security.key_custody import remote
+        return remote({"operation": "encrypt", "namespace": namespace, "data": base64.b64encode(raw).decode()})
+    from aegis.security.key_custody import local_path, load
+    if local_path().exists():
+        return load(local_path()).encrypt(namespace, raw)
+    from cryptography.fernet import Fernet
+    return Fernet(encryption_key(namespace)).encrypt(raw).decode()
+
+
+def decrypt(namespace, token):
+    if os.environ.get("AEGIS_KEY_BROKER_SOCKET"):
+        from aegis.security.key_custody import remote
+        return base64.b64decode(remote({"operation": "decrypt", "namespace": namespace, "token": token}), validate=True)
+    from aegis.security.key_custody import local_path, load
+    if local_path().exists():
+        return load(local_path()).decrypt(namespace, token)
+    from cryptography.fernet import Fernet
+    return Fernet(encryption_key(namespace)).decrypt(token.encode())
+
+
 def encryption_key(namespace):
+    if os.environ.get("AEGIS_KEY_BROKER_SOCKET"):
+        raise RuntimeError("Derived production keys cannot leave the custody broker")
     return base64.urlsafe_b64encode(hmac.new(secret(), namespace.encode(), hashlib.sha256).digest())
 
 
@@ -174,8 +219,16 @@ def require(kind, identity):
 
 
 def put(kind, identity, value):
-    execute_write("INSERT INTO control_objects(kind,id,body) VALUES(?,?,?) "
-                  "ON CONFLICT(kind,id) DO UPDATE SET body=excluded.body", (kind, identity, canonical(value)))
+    raw = canonical(value)
+    if len(raw.encode()) > 16 * 1024 * 1024:
+        raise ValueError("Protected object exceeds storage budget")
+    with LOCK, get_db_connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if (not conn.execute("SELECT 1 FROM control_objects WHERE kind=? AND id=?", (kind, identity)).fetchone()
+            and conn.execute("SELECT COUNT(*) FROM control_objects WHERE kind=?", (kind,)).fetchone()[0] >= 4096):
+            raise ValueError("Protected object quota reached; archive expired operational state")
+        conn.execute("INSERT INTO control_objects(kind,id,body) VALUES(?,?,?) "
+                     "ON CONFLICT(kind,id) DO UPDATE SET body=excluded.body", (kind, identity, raw))
     return value
 
 
@@ -188,6 +241,7 @@ def event(code, reference="", action="BLOCKED"):
     identity = uid("SEC")
     execute_write("INSERT INTO security_events(id,event_type,severity,description,source_document,action_taken) "
                   "VALUES(?,?,?,?,?,?)", (identity, code, "HIGH", code.replace("_", " "), reference, action))
+    execute_write("DELETE FROM security_events WHERE rowid NOT IN (SELECT rowid FROM security_events ORDER BY rowid DESC LIMIT 4000)")
     return identity
 
 
@@ -198,7 +252,7 @@ class Denied(ValueError):
         super().__init__(message)
 
 
-def verify_rows(rows, head, key=None):
+def verify_rows(rows, head, key=None, keyring=None):
     previous = "0" * 64
     sequence = 0
     try:
@@ -212,24 +266,39 @@ def verify_rows(rows, head, key=None):
         if not head:
             return sequence == 0
         expected = {"sequence": sequence, "hash": previous}
-        signature = (hmac.new(key, ("receipt-head" + canonical(expected)).encode(), hashlib.sha256).hexdigest()
-                     if key is not None else sign(expected, "receipt-head"))
+        valid_signature = (keyring.verify(expected, "receipt-head", head["signature"]) if keyring is not None else
+            hmac.compare_digest(head["signature"], hmac.new(key, ("receipt-head" + canonical(expected)).encode(), hashlib.sha256).hexdigest())
+            if key is not None else verify_signature(expected, "receipt-head", head["signature"]))
         return (head["sequence"] == sequence and head["hash"] == previous
-                and hmac.compare_digest(head["signature"], signature))
+                and valid_signature)
     except (KeyError, ValueError, TypeError):
         return False
+    finally:
+        # An early failure must finalize a streaming SQLite statement before
+        # Denied/event opens another write connection to the same database.
+        if hasattr(rows, "close"):
+            rows.close()
 
 
 def verify_chain(record_failure=True):
     with LOCK, get_db_connection() as conn:
         conn.execute("BEGIN")
-        rows = conn.execute("SELECT * FROM control_receipts ORDER BY sequence").fetchall()
+        count = conn.execute("SELECT COUNT(*) FROM control_receipts").fetchone()[0]
+        rows = conn.execute("SELECT * FROM control_receipts ORDER BY sequence")
         head = conn.execute("SELECT * FROM control_head WHERE singleton=1").fetchone()
         valid = verify_rows(rows, head)
+        anchored = False
+        if valid:
+            from aegis.security import audit_anchor
+            try:
+                anchored = audit_anchor.synchronize(conn, head)
+            except (OSError, ValueError, RuntimeError, KeyError):
+                valid = False
     if not valid and record_failure:
         event("RECEIPT_CHAIN_FAILURE")
-    return {"is_valid": valid, "count": len(rows), "status": "VALID" if valid else "TAMPERED",
-            "scope": "Local hash chain with HMAC head; not an external or hardware trust anchor"}
+    return {"is_valid": valid, "count": count, "status": "VALID" if valid else "TAMPERED_OR_WITNESS_UNAVAILABLE",
+            "independently_anchored": anchored,
+            "scope": "Independent monotonic witness" if anchored else "Local hash chain with HMAC head; not an external or hardware trust anchor"}
 
 
 def receipt(action, actor="system", **metadata):
@@ -237,13 +306,19 @@ def receipt(action, actor="system", **metadata):
         raise ValueError("Receipt metadata cannot replace chain identity fields")
     with LOCK, get_db_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        rows = conn.execute("SELECT * FROM control_receipts ORDER BY sequence").fetchall()
+        rows = conn.execute("SELECT * FROM control_receipts ORDER BY sequence")
         head = conn.execute("SELECT * FROM control_head WHERE singleton=1").fetchone()
         if not verify_rows(rows, head):
             # Record after the write transaction has released its lock.
             conn.rollback()
             raise Denied("RECEIPT_CHAIN_FAILURE", "Receipt chain is damaged; append refused")
+        from aegis.security import audit_anchor
+        audit_anchor.synchronize(conn, head)
         sequence = (head["sequence"] if head else 0) + 1
+        from aegis.security.availability import bounded_setting
+        ceiling = bounded_setting("AEGIS_MAX_RECEIPTS", 100000, 100, 1000000)
+        if sequence > ceiling:
+            raise ValueError("Audit ledger quota reached; preserve and independently anchor this ledger before starting a new installation")
         body = {"id": uid("GREC"), "sequence": sequence, "action": action,
                 "actor": actor, "timestamp": time.time(), "mode": "SOFTWARE_SIMULATION",
                 "previous_receipt_hash": head["hash"] if head else "0" * 64, **metadata}
@@ -253,6 +328,11 @@ def receipt(action, actor="system", **metadata):
         conn.execute("INSERT INTO control_head VALUES(1,?,?,?) ON CONFLICT(singleton) DO UPDATE SET "
                      "sequence=excluded.sequence,hash=excluded.hash,signature=excluded.signature",
                      (sequence, hashed, sign(head_data, "receipt-head")))
+    # Commit locally before publishing. A crash here is recovered by synchronizing
+    # the still-authenticated suffix; the witness never accepts an older head.
+    if audit_anchor.configured():
+        if not verify_chain(record_failure=False)["is_valid"]:
+            raise Denied("AUDIT_WITNESS_UNAVAILABLE", "Receipt was committed locally but independent acknowledgement failed; reconcile before retrying")
     return {**body, "receipt_hash": hashed}
 
 

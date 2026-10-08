@@ -1,0 +1,44 @@
+[Unit]
+Description=Aegis isolated pinned model %i
+Before=aegis-api.service
+Requires=aegis-key.service aegis-witness.service aegis-attestor.service
+After=aegis-key.service aegis-witness.service aegis-attestor.service
+
+[Service]
+Type=simple
+User=aegis-model
+Group=aegis-model
+EnvironmentFile=/etc/aegis/model-%i.env
+ExecStart=/opt/aegis-bundles/%i/runtime/llama-server --model /opt/aegis-bundles/%i/weights/model.gguf --host 127.0.0.1 --port 8080 --alias aegis-pinned --offline --log-disable --cache-ram 0 --no-cache-idle-slots --parallel 1
+PrivateNetwork=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+InaccessiblePaths=/var/lib/aegis /run/aegis-key /run/aegis-witness /run/aegis-attestor /var/lib/aegis-key /var/lib/aegis-witness -/etc/aegis/attestor.private.pem -/var/run/docker.sock
+ReadOnlyPaths=/opt/aegis-bundles
+StandardOutput=null
+StandardError=null
+LimitCORE=0
+MemoryMax=8G
+TasksMax=128
+CPUQuota=400%
+KillMode=control-group
+TimeoutStopSec=10
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

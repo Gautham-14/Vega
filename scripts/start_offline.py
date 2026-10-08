@@ -72,7 +72,7 @@ def main(argv=None) -> int:
                                    "--port", str(PORT), "--quiet"], cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
                                   start_new_session=os.name != "nt")
         wait_for_server(server)
-        print(f"Ready. Dashboard: http://{HOST}:{PORT} | /help for guidance | /exit stops this session.", flush=True)
+        print(f"Ready. Local API: http://{HOST}:{PORT} | /help for guidance | /exit stops this session.", flush=True)
         command = [sys.executable, "-I", str(ROOT / "scripts" / "run_cli.py")]
         if args.plain:
             command.append("--plain")

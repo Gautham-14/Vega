@@ -2,7 +2,7 @@
 import hashlib
 import hmac
 import os
-from aegis.control.store import Denied, LOCK, digest, sign, get, require, put, receipt, event, uid
+from aegis.control.store import Denied, LOCK, digest, sign, verify_signature, get, require, put, receipt, event, uid
 from aegis.control.policy import actor, approved, SKILLS
 from aegis.control.capsules import RUNTIME
 
@@ -49,7 +49,7 @@ def import_package(manifest, artifact, supplied_signature, identity, rollback_ap
         faults.append("INVALID_COMPONENT_METADATA")
     if hashlib.sha256(artifact.encode()).hexdigest() != manifest.get("artifact_hash"):
         faults.append("INVALID_PACKAGE_HASH")
-    if manifest.get("signer") != "aegis-demo-publisher" or not hmac.compare_digest(signature(manifest), supplied_signature):
+    if manifest.get("signer") != "aegis-demo-publisher" or not verify_signature(manifest, "offline-demo-publisher", supplied_signature):
         faults.append("FAILED_IMPORT_SIGNATURE")
     family = f"{manifest.get('kind')}:{manifest.get('name')}"
     state = get("package-policy", family) or {"current": 0, "minimum": 1, "revoked": []}
@@ -75,7 +75,7 @@ def import_package(manifest, artifact, supplied_signature, identity, rollback_ap
 
 def verify_package(value):
     m = value["manifest"]
-    return hmac.compare_digest(value["signature"], signature(m)) and value["artifact_hash"] == m["artifact_hash"]
+    return verify_signature(m, "offline-demo-publisher", value["signature"]) and value["artifact_hash"] == m["artifact_hash"]
 
 
 def qualify(package_id, identity, shadow=False):
@@ -138,7 +138,7 @@ def executable(package_id, skill):
             or (m["version"] < max(state["minimum"], state["current"]) and not rollback_allowed(value)) or m["version"] in state["revoked"]
             or m["kind"] != "model" or m["mock_profile"] != "safe"):
         raise Denied("UNAPPROVED_PACKAGE", "Package is not currently approved for this skill", package_id)
-    if not hmac.compare_digest(value.get("approval_seal", ""), sign({"manifest": m, "approval_id": value.get("approval_id")}, "approved-package")):
+    if not verify_signature({"manifest": m, "approval_id": value.get("approval_id")}, "approved-package", value.get("approval_seal", "")):
         raise Denied("UNAPPROVED_PACKAGE", "Package approval record changed", package_id)
     return value
 

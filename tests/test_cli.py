@@ -6,7 +6,7 @@ import time
 from unittest.mock import Mock
 
 import pytest
-import aegis_cli as cli
+from aegis import cli
 
 
 @pytest.mark.parametrize("url", ["https://example.com/api", "http://localhost:8000/api", "http://127.0.0.1:0/api",

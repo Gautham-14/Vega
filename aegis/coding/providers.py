@@ -6,6 +6,8 @@ import json
 import os
 import re
 import time
+import threading
+import socket
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -120,7 +122,7 @@ def profile(provider_id):
     value = store.require("provider-profile", provider_id)
     body = {k: v for k, v in value.items() if k != "seal"}
     if (not isinstance(value.get("seal"), str)
-            or not hmac.compare_digest(value["seal"], store.sign(body, "provider-profile"))):
+            or not store.verify_signature(body, "provider-profile", value["seal"])):
         raise store.Denied("PROVIDER_INTEGRITY_FAILURE", "Provider profile was modified")
     return body
 
@@ -170,10 +172,24 @@ def require_sensitive_boundary(spec, classification):
 
 
 def request_json(path, body=None, *, spec=None, media=False):
+    from aegis.security.availability import admit
+    with admit("provider", provider=(spec or {}).get("provider", "ollama")):
+        return _request_json(path, body, spec=spec, media=media)
+
+
+def _request_json(path, body=None, *, spec=None, media=False):
     # Direct numeric loopback: no proxies, DNS, redirects, arbitrary URLs, or pull API.
     from aegis.security import lockdown
     generation = lockdown.check()
     config = spec or {}
+    from aegis.security.deployment import production
+    if production():
+        from aegis.security.attestor import remote
+        observed = remote("measure", config)
+        if observed.get("network_isolation_verified") is not True:
+            raise store.Denied("PROVIDER_RUNTIME_UNVERIFIED", "Production model traffic requires a supervised isolated provider")
+    if body is not None and config.get("engine") == "llama.cpp":
+        body = {**body, "cache_prompt": False}
     protocol = config.get("protocol", "ollama")
     operations = {"ollama": {"/api/tags": "GET", "/api/chat": "POST"},
                   "openai-compatible": {"/v1/models": "GET", "/v1/chat/completions": "POST"},
@@ -199,6 +215,21 @@ def request_json(path, body=None, *, spec=None, media=False):
         headers["Authorization"] = "Bearer " + key
     transport = http.client.HTTPSConnection if endpoint.scheme == "https" else http.client.HTTPConnection
     connection = transport(endpoint.hostname, endpoint.port or (443 if endpoint.scheme == "https" else 80), timeout=timeout)
+    timed_out = threading.Event()
+    active_socket = None
+
+    def abort_request():
+        # Socket timeouts alone reset on each read and permit an endless trickle.
+        timed_out.set()
+        stream = active_socket if active_socket is not None else connection.sock
+        if stream is not None:
+            try:
+                stream.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    deadline = threading.Timer(timeout, abort_request)
+    deadline.daemon = True
     try:
         payload = None if body is None else json.dumps(body, allow_nan=False).encode()
         if payload is not None and len(payload) > (12_000_000 if media else 1_000_000):
@@ -209,12 +240,16 @@ def request_json(path, body=None, *, spec=None, media=False):
             release = require_active_release(config)
             if release["id"] != config["_sensitive_release_id"]:
                 raise store.Denied("PROVIDER_RELEASE_CHANGED", "Provider release changed before dispatch")
+        deadline.start()
         connection.request(method, path, body=payload, headers=headers)
+        active_socket = connection.sock
+        if timed_out.is_set():
+            raise TimeoutError("Local request deadline exceeded")
         response = connection.getresponse()
         if response.status != 200:
             raise ValueError("Invalid model status")
         raw = response.read(limit + 1)
-        if len(raw) > limit:
+        if timed_out.is_set() or len(raw) > limit:
             raise ValueError("Invalid model response")
         result = json.loads(raw)
         if not isinstance(result, dict) and not (path == "/sdapi/v1/sd-models" and isinstance(result, list)):
@@ -226,6 +261,7 @@ def request_json(path, body=None, *, spec=None, media=False):
     except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException):
         raise store.Denied("LOCAL_MODEL_UNAVAILABLE", "Local model request failed or exceeded the response limit") from None
     finally:
+        deadline.cancel()
         connection.close()
 
 

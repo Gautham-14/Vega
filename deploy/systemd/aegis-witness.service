@@ -1,0 +1,30 @@
+[Unit]
+Description=Aegis independent monotonic audit witness
+
+[Service]
+User=aegis-witness
+Group=aegis-custody
+WorkingDirectory=/opt/aegis
+EnvironmentFile=/etc/aegis/custody.env
+ExecStart=/opt/aegis/.venv/bin/python -m aegis.security.audit_anchor serve --database /var/lib/aegis-witness/witness.db --socket /run/aegis-witness/service.sock --runtime-uid ${AEGIS_RUNTIME_UID}
+RuntimeDirectory=aegis-witness
+RuntimeDirectoryMode=0750
+StateDirectory=aegis-witness
+StateDirectoryMode=0700
+PrivateNetwork=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/var/lib/aegis-witness /run/aegis-witness
+InaccessiblePaths=/var/lib/aegis /var/lib/aegis-key
+LimitCORE=0
+MemoryMax=256M
+TasksMax=16
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

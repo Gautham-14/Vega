@@ -69,7 +69,7 @@ def test_signed_bundle_checks_real_bytes_and_keeps_runtime_unverified(tmp_path):
 
 
 def test_cli_verifies_bundle_without_server_or_private_key(tmp_path):
-    import aegis_cli
+    from aegis import cli as aegis_cli
     root, trust, _, _, _ = bundle_fixture(tmp_path)
     args = aegis_cli.build_parser().parse_args(["bundle-verify", str(root), "--trust-policy", str(trust)])
     assert aegis_cli.execute(args, None)["status"] == "VERIFIED_OFFLINE_FILES"

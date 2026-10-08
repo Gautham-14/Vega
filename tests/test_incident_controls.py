@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 from starlette.testclient import TestClient
 
-import aegis_cli as cli
+from aegis import cli
 from aegis.api.limits import RequestBodyLimit
 from aegis.api.server import app
 from aegis.coding import providers, service, tools

@@ -7,16 +7,19 @@ import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from aegis.config import DB_PATH
-from aegis.security.private_files import no_links
+from aegis.security.private_files import no_links, restrict_permissions
 
 @contextmanager
 def get_db_connection():
     """Return a configured SQLite connection with row factory."""
     conn = sqlite3.connect(str(no_links(DB_PATH)))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA trusted_schema = OFF;")
-    conn.execute("PRAGMA foreign_keys = ON;")
     try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA trusted_schema = OFF;")
+        conn.execute("PRAGMA foreign_keys = ON;")
+        # Bound database growth independently of cached directory admission checks.
+        page_size = conn.execute("PRAGMA page_size").fetchone()[0]
+        conn.execute(f"PRAGMA max_page_count = {256 * 1024 * 1024 // page_size}")
         with conn:
             yield conn
     finally:
@@ -24,7 +27,14 @@ def get_db_connection():
 
 def init_db() -> None:
     """Initialize all SQLite tables for Aegis sovereign runtime."""
+    path = no_links(DB_PATH)
+    existing = path.exists()
+    if existing:
+        # Existing files can retain explicit grants after directory ACL changes.
+        restrict_permissions(path)
     with get_db_connection() as conn:
+        if not existing:
+            restrict_permissions(path)
         cursor = conn.cursor()
 
         # Model Registry Table

@@ -3,7 +3,7 @@ import json
 import time
 from cryptography.fernet import Fernet, InvalidToken
 from aegis import config
-from aegis.control.store import Denied, LOCK, all_objects, canonical, digest, encryption_key, get, put, require, receipt, uid, event
+from aegis.control.store import Denied, LOCK, all_objects, canonical, digest, encrypt, decrypt, get, put, require, receipt, uid, event
 from aegis.control.policy import actor, authorize_label, approved, LEVELS
 from aegis.control.data import tripwire, context_check
 from aegis.control import leases, packages, capsules
@@ -17,7 +17,7 @@ def retain(task, payload, expires_at):
     encrypted = Fernet(key).encrypt(canonical(payload).encode())
     path = contained_file(config.ARTIFACTS_DIR, identity + ".enc")
     path.write_bytes(encrypted)
-    put("artifact-key", key_ref, {"wrapped": Fernet(encryption_key("retention-broker")).encrypt(key).decode()})
+    put("artifact-key", key_ref, {"wrapped": encrypt("retention-broker", key)})
     value = {"id": identity, "task_id": task["id"], "owner": task["user"], "label": task["label"],
              "key_ref": key_ref, "expires_at": expires_at, "derivatives": [], "status": "RETAINED",
              "retention_policy": "lease-expiry-or-15-minutes", "filename": path.name,
@@ -93,7 +93,7 @@ def export_artifact(artifact_id, identity, recipient, approval_id=None, restore=
             wrapped = require("artifact-key", value["key_ref"])
             if "wrapped" not in wrapped:
                 raise Denied("DESTROYED_TASK_KEY", "Artifact key was destroyed")
-            key = Fernet(encryption_key("retention-broker")).decrypt(wrapped["wrapped"].encode())
+            key = decrypt("retention-broker", wrapped["wrapped"])
             payload = json.loads(Fernet(key).decrypt(contained_file(config.ARTIFACTS_DIR, value["filename"]).read_bytes()))
             if digest(payload) != value["content_hash"]:
                 raise Denied("ARTIFACT_INTEGRITY_FAILURE", "Artifact content changed", artifact_id)

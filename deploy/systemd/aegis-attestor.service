@@ -1,0 +1,27 @@
+[Unit]
+Description=Aegis independent process and isolation attestor
+
+[Service]
+User=root
+Group=aegis-custody
+WorkingDirectory=/opt/aegis
+EnvironmentFile=/etc/aegis/custody.env
+ExecStart=/opt/aegis/.venv/bin/python -m aegis.security.attestor --policy /etc/aegis/attestor-policy.json --socket /run/aegis-attestor/service.sock --runtime-uid ${AEGIS_RUNTIME_UID}
+RuntimeDirectory=aegis-attestor
+RuntimeDirectoryMode=0750
+PrivateNetwork=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/run/aegis-attestor
+InaccessiblePaths=/var/lib/aegis-key /var/lib/aegis-witness /var/lib/aegis
+LimitCORE=0
+MemoryMax=512M
+TasksMax=16
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

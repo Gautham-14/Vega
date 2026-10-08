@@ -225,10 +225,13 @@ class Client:
         except (ValueError, UnicodeError):
             raise CLIError("Server returned invalid JSON") from None
 
-    def login(self, username):
+    def login(self, username, mfa=False):
         username = username or input("Aegis account: ").strip()
         password = getpass("Aegis password: ")
-        result = self.call("/auth/login", "POST", {"username": username, "password": password}, public=True)
+        body = {"username": username, "password": password}
+        if mfa:
+            body["otp"] = getpass("Authenticator code: ")
+        result = self.call("/auth/login", "POST", body, public=True)
         password = None
         if not isinstance(result, dict) or not result.get("access_token") or result.get("actor") != username:
             raise CLIError("Server returned an invalid sign-in response")
@@ -370,7 +373,14 @@ def import_files(paths):
     if directories:
         root = directories[0]
         candidates = []
-        for current, dirs, names in os.walk(root, followlinks=False):
+        visited = 0
+        def unreadable(error):
+            raise CLIError("Import inventory could not be completely read; nothing was imported") from error
+
+        for current, dirs, names in os.walk(root, followlinks=False, onerror=unreadable):
+            visited += 1 + len(dirs) + len(names)
+            if visited > 4096:
+                raise CLIError("Import exceeds the directory entry budget; name a smaller directory")
             for name in list(dirs):
                 child = Path(current) / name
                 try:
@@ -393,6 +403,8 @@ def import_files(paths):
                     skipped.append(relative.as_posix())
                     continue
                 candidates.append((child, relative.as_posix()))
+                if len(candidates) > MAX_FILES:
+                    raise CLIError(f"Import exceeds {MAX_FILES} files. Name fewer files; nothing was imported.")
     else:
         if any(not path.is_file() for path in originals):
             raise CLIError("Every import path must be an existing regular file")
@@ -506,6 +518,12 @@ def build_parser():
     incident = commands.add_parser("lockdown", help="Inspect or change the Security Officer incident stop")
     incident.add_argument("action", choices=["status", "enable", "disable"], nargs="?", default="status")
     login.add_argument("username", nargs="?")
+    login.add_argument("--mfa", action="store_true", help="Prompt securely for the enrolled authenticator code")
+    commands.add_parser("step-up", help="Verify MFA again before privileged production changes")
+    key = commands.add_parser("keys", help="Offline local keyring migration and rotation; stop Aegis first")
+    key.add_argument("action", choices=["init", "rotate", "status"])
+    commands.add_parser("provider-attest-supervised", help="Import fresh evidence from the independent supervisor").add_argument("id")
+    commands.add_parser("provider-refresh-supervised", help="Refresh unchanged evidence within the active approval window").add_argument("id")
     commands.add_parser("manifest-hash", help="Compute a metadata manifest checksum locally from JSON").add_argument("file")
     bundle = commands.add_parser("bundle-verify", help="Verify every file in an independently signed offline model bundle")
     bundle.add_argument("directory", help="Offline bundle directory containing manifest.json and manifest.sig")
@@ -551,6 +569,7 @@ def build_parser():
     user_commands.add_parser("sessions", help="List account session times without credentials").add_argument("actor")
     user_commands.add_parser("disable", help="Disable account, revoke sessions and existing work").add_argument("actor")
     user_commands.add_parser("revoke-sessions", help="Revoke all account sessions and existing work").add_argument("actor")
+    user_commands.add_parser("mfa-enroll", help="Enroll/reset MFA locally; displays the seed once").add_argument("actor")
     commands.add_parser("audit-export", help="Export receipt hashes only for independent offline anchoring").add_argument("file")
     backup = commands.add_parser("backup", help="Encrypted offline operational-state backup and recovery")
     backup_commands = backup.add_subparsers(dest="backup_command", required=True)
@@ -625,11 +644,15 @@ def provision_user(args):
     from aegis.control import policy, store
     if args.user_command == "roles":
         return policy.ACTORS
-    if args.user_command in {"list", "sessions", "disable", "revoke-sessions"}:
+    if args.user_command in {"list", "sessions", "disable", "revoke-sessions", "mfa-enroll"}:
         from aegis.security import auth
         from aegis.storage.database import init_db
         init_db()
         store.init_control()
+        if args.user_command == "mfa-enroll":
+            result = auth.enroll_mfa(args.actor)
+            print("Authenticator seed (save now): " + terminal_text(result["secret"]))
+            return {"actor": args.actor, "mfa_enrolled": True, "sessions_revoked": True}
         if args.user_command == "list":
             return auth.account_inventory()
         if args.user_command == "sessions":
@@ -664,13 +687,42 @@ def backup_command(args):
 
 def execute(args, client):
     command = {"coding-capsule": "register", "coding-lease": "lease", "coding-run": "run"}.get(args.command, args.command)
+    if command == "keys":
+        from aegis.security import key_custody
+        from aegis.storage.database import init_db
+        from aegis.control import store
+        init_db()
+        store.init_control()
+        if args.action == "init":
+            return key_custody.initialize()
+        if os.environ.get("AEGIS_KEY_BROKER_SOCKET"):
+            if args.action == "rotate":
+                raise CLIError("Stop and rotate keys under the broker identity using key_custody")
+            return key_custody.remote({"operation": "status"})
+        path = key_custody.local_path()
+        with store.LOCK:
+            from aegis.security.quiescence import exclusive
+            if args.action == "rotate":
+                with exclusive("rotating local custody keys"):
+                    ring = key_custody.load(path)
+                    ring.rotate()
+                    key_custody.save(path, ring)
+            else:
+                ring = key_custody.load(path)
+            return key_custody.dispatch(ring, {"operation": "status"})
+    if command == "step-up":
+        return client.call("/auth/step-up", "POST", {"otp": getpass("Authenticator code: ")})
+    if command == "provider-attest-supervised":
+        return client.call(f"/providers/{segment(args.id)}/attest-supervised", "POST")
+    if command == "provider-refresh-supervised":
+        return client.call(f"/providers/{segment(args.id)}/refresh-supervised", "POST")
     if command == "audit-export":
         value = client.call("/security/audit-commitments")
         target = no_links(args.file)
         with target.open("x", encoding="utf-8") as stream:
             restrict_permissions(target)
             json.dump(value, stream, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
-        return {"path": str(target), "count": value["count"], "independently_anchored": False}
+        return {"path": str(target), "count": value["count"], "independently_anchored": value.get("independently_anchored", False)}
     if command == "help":
         if args.topic in GUIDES:
             return {"kind": "guide", "title": "Aegis / " + args.topic, "steps": GUIDES[args.topic]}
@@ -753,7 +805,7 @@ def execute(args, client):
         value["sha256"] = compute_manifest_sha256(value)
         return value
     if command == "login":
-        return client.login(args.username)
+        return client.login(args.username, mfa=True) if args.mfa else client.login(args.username)
     if command == "logout":
         try:
             return client.call("/auth/logout", "POST")
@@ -915,59 +967,10 @@ def shell(client, parser, *, plain=False):
         from rich.text import Text
         
         # Aegis-style ASCII art
-        banner = """[bold #8b5cf6]
- █████╗ ███████╗ ██████╗ ██╗███████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
-██╔══██╗██╔════╝██╔════╝ ██║██╔════╝      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
-███████║█████╗  ██║  ███╗██║███████╗█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   
-██╔══██║██╔══╝  ██║   ██║██║╚════██║╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   
-██║  ██║███████╗╚██████╔╝██║███████║      ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   
-╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝╚══════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   
-[/]"""
-        
-        logo = """[bold #8b5cf6]
-                           ......
-                      :-+*########*+=-.
-                    =*%%%%%%%%########*=:.
-                 .=*%%%%%%%%%%%##########=:
-                 +%%%%%%%%%%%%%###########+-
-               .+%%@@@@%%%%%%%%%##########*+:
-               =#%%%%%%%%%%%%%%###########**=
-              :*%%%%%%- -%%%%%%####: :####**+:
-              -#%%%%-     -%%%###-     :##***-
-             .=%%%%%-     -%#####-     :##***=
-             .+%%%%%       ######       ##***=
-             .+%%%%%-     -######:     :##***=.
-    .-:.    -+%%%%%%-     -######:     :##****=:. ..--=-.
-   :+%%%#**#%%%%%%%%%%- -##########: :####*******+******-.
-   -*%%%%%%%%%%%%%%%%%%#####----##########**************=.
-   .+%%%%%%%%%%%%%%%%%%####-    -#########**************-.
-    :+%%%%%%%%%%%%%%%%%####-    -#########**=.-+******+-.
-      -+###*-.+%%%%%%%%####-    -#########**-   :--=-:.
-             .=%%%%##%%#####----####*#####*+:
-             .+%%%####%############***####*+:
-             :+%%%#################***####*+:
-             :*%%%##*#############****####**-
-             -#%%%##*#############*+**####**=.
-            .+%%%%%#**############*+**####**+:
-            -*%%%%%#**###########*++*#####***=.
-           .=%%%%%%#++###########*++*#=.=****+:
-           :+%%%*=:.  -######=.=#*++*+: .-+**+:
-           .=+=:.     :*####=. :=*+++-    .::.
-                      .=##+-    :-=-:
-                        ::        .
-[/]"""
-        info = """[bold #8b5cf6]Security Ops[/]
-[dim]/lockdown, /validate, /receipts[/]
-
-[bold #8b5cf6]Model Custody[/]
-[dim]/bundle-verify, /provider-qualify[/]
-
-[bold #8b5cf6]Knowledge & Leases[/]
-[dim]/context, /leases, /repositories[/]
-
-[dim #8b5cf6]Aegis System Commands - Zero-Egress Environment
-Network: AIR-GAPPED | Clearance: INTERNAL[/]"""
-
+        from aegis.ui_constants import AEGIS_BANNER, AEGIS_LOGO_RICH, AEGIS_INFO_PANEL
+        banner = AEGIS_BANNER
+        logo = AEGIS_LOGO_RICH
+        info = AEGIS_INFO_PANEL
         console.print(banner)
         table = Table.grid(padding=1, expand=True)
         table.add_column(justify="left", ratio=1)
@@ -976,7 +979,7 @@ Network: AIR-GAPPED | Clearance: INTERNAL[/]"""
         
         panel = Panel(table, title="[dim #8b5cf6]--- Aegis Console v0.15.1 <2026.10.02> - Sovereign AI Broker ---[/]", border_style="dim #8b5cf6")
         console.print(panel)
-        console.print("[dim #8b5cf6]Welcome to the Aegis operator console. Type your command or /help.[/]")
+        console.print("[dim info]Welcome to the Aegis operator console. Type your command or /help.[/]")
         console.print("[verified]System Status:[/] [dim]All telemetry locked. Egress forbidden.[/]")
     else:
         print(f"Aegis terminal | {client.url}")
@@ -1119,7 +1122,7 @@ def main(argv=None):
         if args.command in {"users", "backup"}:
             print_result(provision_user(args) if args.command == "users" else backup_command(args), json_output=args.json, plain=args.plain)
             return 0
-        if args.command in {"capacity", "manifest-hash", "bundle-verify", "help"}:
+        if args.command in {"capacity", "manifest-hash", "bundle-verify", "help", "keys"}:
             print_result(execute(args, None), json_output=args.json, plain=args.plain)
             return 0
         client = Client(args.url, args.timeout)

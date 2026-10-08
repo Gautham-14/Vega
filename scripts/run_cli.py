@@ -11,7 +11,7 @@ from scripts.runtime_support import require_environment
 def main():
     try:
         require_environment(ROOT)
-        from aegis_cli import main as cli_main
+        from aegis.cli import main as cli_main
         return cli_main()
     except (RuntimeError, ImportError) as error:
         print(f"Aegis CLI: {error}", file=sys.stderr)

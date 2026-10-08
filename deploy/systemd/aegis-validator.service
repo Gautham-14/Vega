@@ -1,0 +1,36 @@
+[Unit]
+Description=Aegis fixed-command gVisor validator
+After=docker.service
+Requires=docker.service
+
+[Service]
+User=aegis-validator
+Group=aegis-custody
+SupplementaryGroups=docker
+WorkingDirectory=/opt/aegis
+EnvironmentFile=/etc/aegis/custody.env
+EnvironmentFile=/etc/aegis/validator.env
+Environment=AEGIS_DATA_DIR=/var/lib/aegis-validator
+Environment=AEGIS_SANDBOX_ENABLED=1
+ExecStart=/opt/aegis/.venv/bin/python -m aegis.security.validation_broker --socket /run/aegis-validator/service.sock --runtime-uid ${AEGIS_RUNTIME_UID}
+RuntimeDirectory=aegis-validator
+RuntimeDirectoryMode=0750
+StateDirectory=aegis-validator
+StateDirectoryMode=0700
+PrivateNetwork=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/run/aegis-validator /var/lib/aegis-validator
+InaccessiblePaths=/var/lib/aegis /var/lib/aegis-key /var/lib/aegis-witness /etc/aegis/attestor.private.pem
+LimitCORE=0
+MemoryMax=512M
+TasksMax=32
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

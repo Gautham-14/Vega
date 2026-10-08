@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from aegis.security import auth
 from aegis.control import policy
+import time
 
 router = APIRouter(prefix="/api/auth", tags=["Local authentication"])
 
@@ -10,6 +11,12 @@ class Login(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str = Field(min_length=1, max_length=80)
     password: str = Field(min_length=1, max_length=256)
+    otp: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
+
+
+class StepUp(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    otp: str = Field(pattern=r"^[0-9]{6}$")
 
 
 @router.get("/status")
@@ -20,11 +27,16 @@ def status():
 
 @router.post("/login")
 def login(body: Login, request: Request, response: Response):
-    result = auth.login(body.username, body.password, request.client.host if request.client else "local")
-    response.set_cookie("aegis_session", result["access_token"], max_age=auth.SESSION_SECONDS,
+    result = auth.login(body.username, body.password, request.client.host if request.client else "local", body.otp)
+    response.set_cookie("aegis_session", result["access_token"], max_age=max(0, int(result["expires_at"] - time.time())),
                         httponly=True, samesite="strict", secure=request.url.scheme == "https", path="/api")
     response.headers["Cache-Control"] = "no-store"
     return result
+
+
+@router.post("/step-up")
+def step_up(body: StepUp, request: Request, identity=Depends(auth.principal)):
+    return auth.step_up(request, body.otp)
 
 
 @router.get("/me")

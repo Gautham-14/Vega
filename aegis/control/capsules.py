@@ -1,7 +1,7 @@
 """Complete stack identity and software-only attestation before key release."""
 import hmac
 from cryptography.fernet import Fernet
-from aegis.control.store import Denied, digest, put, require, receipt, sign
+from aegis.control.store import Denied, digest, put, require, receipt, sign, verify_signature
 from aegis.control.policy import POLICY_VERSION, SKILLS, actor, approved
 
 COMPONENTS = {"model", "tokenizer", "quantization", "system_prompt_hash", "adapter",
@@ -64,8 +64,8 @@ def attest(capsule_id, components, policy_state):
     delta = compare(capsule_id, components)
     if not delta["matches"]:
         raise Denied("CAPSULE_MISMATCH", "Changed components: " + ", ".join(delta["changed_components"]), capsule_id)
-    seal = sign({"id": capsule_id, "components": components}, "approved-capsule")
-    if value["status"] != "APPROVED" or not hmac.compare_digest(value.get("seal", ""), seal):
+    valid_seal = verify_signature({"id": capsule_id, "components": components}, "approved-capsule", value.get("seal", ""))
+    if value["status"] != "APPROVED" or not valid_seal:
         raise Denied("UNAPPROVED_CAPSULE", "Capsule is not approved", capsule_id)
     if components["security_policy_version"] != POLICY_VERSION or policy_state != {
             "offline": True, "firewall": True, "hygiene": True, "training": False}:

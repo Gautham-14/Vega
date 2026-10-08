@@ -250,11 +250,12 @@ def test_local_mutations_reject_cross_origin_and_untrusted_hosts():
         assert client.get("/health", headers={"Host": host}).status_code == 400
 
 
-def test_startup_lifespan_serves_ui_and_preserves_modified_records():
+def test_startup_lifespan_serves_offline_docs_and_preserves_modified_records():
     execute_write("UPDATE documents SET status = 'DRAFT' WHERE id = 'DOC-SOP-PUMP-REV8'")
     with TestClient(app) as client:
-        assert client.get("/").status_code == 200
-        assert client.get("/static/js/app.js").status_code == 200
+        assert client.get("/docs").status_code == 200
+        assert client.get("/").status_code == 404
+        assert client.get("/static/js/app.js").status_code == 404
         assert client.get("/api/knowledge/DOC-SOP-PUMP-REV8").json()["status"] == "DRAFT"
 
 
@@ -277,7 +278,7 @@ def test_receipt_for_incomplete_task_is_not_valid():
 
 
 def test_cli_generated_manifest_hash_is_accepted_by_api(tmp_path):
-    import aegis_cli
+    from aegis import cli as aegis_cli
     manifest = {
         "id": "CLI-CANDIDATE", "name": "Pompe modèle Δ", "version": "v1",
         "architecture": "Mock", "parameters": "8B", "quantization": "Q4",

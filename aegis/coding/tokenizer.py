@@ -7,6 +7,7 @@ import hashlib
 import re
 import stat
 from pathlib import Path
+from aegis.security.private_files import no_links
 
 
 def get_tokens(text):
@@ -35,6 +36,7 @@ class LocalModelTokenizer:
         if (not isinstance(sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", sha256)
                 or not path.is_absolute() or str(path).startswith(("\\\\", "//"))):
             raise ValueError("An absolute local tokenizer.json and SHA-256 pin are required")
+        path = no_links(path)
         for part in (path, *path.parents):
             info = part.lstat()
             if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
