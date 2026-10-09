@@ -219,6 +219,11 @@ def lease(req: LeaseRequest, identity=Depends(principal)):
     return leases.issue(req.model_dump(), identity)
 
 
+@router.post("/leases/{lease_id}/revoke")
+def revoke_lease(lease_id: str, identity=Depends(principal)):
+    return leases.revoke(lease_id, identity)
+
+
 @router.post("/tasks")
 def task(req: TaskRequest, identity=Depends(principal)):
     require_demo_mode()

@@ -128,8 +128,8 @@ class TaskRunner:
         # 2. Ephemeral Enclave & Crypto KV Cache Preparation
         # -------------------------------------------------------------
         log_step("Capsule Verify", f"Verified cryptographic capsule integrity at: {enclave.enclave_dir} (Status: BLOCK policy active)", "SUCCESS")
-        log_step("Attestation", "Hardware TEE attestation verified (Status: No Key / Withheld on failure)", "SUCCESS")
-        log_step("Purpose Lease", f"Validated time-bound purpose lease for Risk Level: {risk_level} (Status: DENY on expiration)", "SUCCESS")
+        log_step("Attestation", "Deterministic demo only; no hardware TEE attestation performed", "INFO")
+        log_step("Purpose Lease", f"Illustrated purpose policy for risk {risk_level}; this legacy fixture has no live authorization lease", "INFO")
 
         # KV Cache Cryptographic Hashing Setup (Real HMAC salting simulation)
         kv_cache_salt = os.urandom(16) if hasattr(os, 'urandom') else b'fixed_salt_123'
@@ -223,7 +223,7 @@ class TaskRunner:
         # Verify KV Cache isolation before execution
         test_hmac = hmac.new(kv_cache_salt, b"task_auth_token", hashlib.sha256).hexdigest()
         if test_hmac == kv_cache_hmac:
-            log_step("LLM Salted Cache", "LLM Cache Isolation HIT (HMAC + Salt verified) - No Leak", "SUCCESS")
+            log_step("LLM Salted Cache", "Demo HMAC matched; no real model KV cache or leakage test executed", "INFO")
         else:
             raise RuntimeError("KV Cache Isolation failed! HMAC mismatch.")
 
@@ -242,7 +242,7 @@ class TaskRunner:
         def langgraph_node_vision(state: AgentState):
             vision_resp = vision_route["adapter"].generate(ModelRequest(prompt="Extract vibration readings from scanned turnaround report."))
             state["vision_latency"] = vision_resp.latency_ms
-            log_step("LANGGRAPH_NODE_VISION", f"{vision_model['id']} extracted scanned field telemetry ({state['vision_latency']:.1f}ms) [mTLS Remote Call]", "SUCCESS")
+            log_step("LANGGRAPH_NODE_VISION", f"{vision_model['id']} returned a deterministic vision fixture ({state['vision_latency']:.1f}ms); no OCR or remote call", "INFO")
             return state
 
         def langgraph_node_text(state: AgentState):
@@ -252,7 +252,7 @@ class TaskRunner:
             )
             model_resp = text_route["adapter"].generate(model_req)
             state["reasoning_latency"] = model_resp.latency_ms
-            log_step("LANGGRAPH_NODE_REASONING", f"{selected_model['id']} completed compliance assessment ({state['reasoning_latency']:.1f}ms) [mTLS Remote Call]", "SUCCESS")
+            log_step("LANGGRAPH_NODE_REASONING", f"{selected_model['id']} returned deterministic text ({state['reasoning_latency']:.1f}ms); no remote call", "INFO")
             return state
 
         def langgraph_node_code(state: AgentState):
@@ -260,7 +260,7 @@ class TaskRunner:
             limit_val = state.get("limit", 1)
             code_resp = code_route["adapter"].generate(ModelRequest(prompt=f"Calculate vibration excursion ratio: {measured_val} / {limit_val}."))
             state["code_latency"] = code_resp.latency_ms
-            log_step("LANGGRAPH_NODE_CODE", f"{calc_model['id']} returned simulated calculation output ({state['code_latency']:.1f}ms) [mTLS Remote Call]", "SUCCESS")
+            log_step("LANGGRAPH_NODE_CODE", f"{calc_model['id']} returned simulated calculation output ({state['code_latency']:.1f}ms); no code execution or remote call", "INFO")
             return state
 
         # Build and Compile the actual LangGraph
@@ -351,7 +351,7 @@ class TaskRunner:
         # -------------------------------------------------------------
         egress_monitor = ZeroEgressMonitor()
         egress_metrics = egress_monitor.get_metrics()
-        log_step("Memory Hygiene", "Executed memory hygiene and zeroized temporary buffers across isolated compartments", "SUCCESS")
+        log_step("Memory Hygiene", "Temporary demo workspace cleaned; physical RAM/VRAM zeroization is not measured", "INFO")
 
         task_record = {
             "id": task_id,
@@ -383,7 +383,7 @@ class TaskRunner:
         }
 
         receipt = generate_sovereignty_receipt(task_record, artifact_markdown)
-        log_step("Receipt", f"Generated cryptographically anchored receipt: '{receipt['receipt_id']}' (SHA-256: {receipt['receipt_sha256'][:16]}...)", "SUCCESS")
+        log_step("Receipt", f"Generated self-hashed demo receipt: '{receipt['receipt_id']}' (SHA-256: {receipt['receipt_sha256'][:16]}...); no independent anchor", "INFO")
 
         # -------------------------------------------------------------
         # 11. Save Task to SQLite Database

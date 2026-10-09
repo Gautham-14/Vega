@@ -1,0 +1,26 @@
+{
+  "id": "PUBLIC-SYNTHETIC-PUMP",
+  "title": "Synthetic pump inspection",
+  "family": "synthetic-inspection",
+  "revision": "1",
+  "status": "CURRENT_APPROVED",
+  "owner": "data-owner",
+  "authority": "Reviewed synthetic test fixture",
+  "equipment": "Pump P-204",
+  "compartment": "Engineering",
+  "classification": "PUBLIC",
+  "effective_date": "2020-01-01",
+  "permitted_skills": ["inspection-review-v3"],
+  "fields": {
+    "finding": "Synthetic pump vibration reading is 7.2 units.",
+    "measured": "7.2",
+    "reference": "4.5",
+    "internal_identifier": "SYNTHETIC-PRIVATE-IDENTIFIER"
+  },
+  "field_rules": {
+    "finding": "expose",
+    "measured": "expose",
+    "reference": "expose",
+    "internal_identifier": "remove"
+  }
+}

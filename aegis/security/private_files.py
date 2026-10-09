@@ -7,7 +7,53 @@ import os
 from pathlib import Path
 import re
 import stat
-import subprocess
+
+
+def windows_user_sid() -> str:
+    """Read the process token directly; no shell or account-name lookup."""
+    from ctypes import wintypes
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    process = kernel.GetCurrentProcess
+    process.argtypes, process.restype = [], wintypes.HANDLE
+    open_token = advapi.OpenProcessToken
+    open_token.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+    open_token.restype = wintypes.BOOL
+    close = kernel.CloseHandle
+    close.argtypes, close.restype = [wintypes.HANDLE], wintypes.BOOL
+    token = wintypes.HANDLE()
+    if not open_token(process(), 0x0008, ctypes.byref(token)):  # TOKEN_QUERY
+        raise PermissionError("Cannot read Windows process identity")
+    try:
+        get_info = advapi.GetTokenInformation
+        get_info.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+                             ctypes.POINTER(wintypes.DWORD)]
+        get_info.restype = wintypes.BOOL
+        required = wintypes.DWORD()
+        get_info(token, 1, None, 0, ctypes.byref(required))  # TokenUser
+        if not 1 <= required.value <= 65536:
+            raise PermissionError("Invalid Windows identity size")
+        buffer = ctypes.create_string_buffer(required.value)
+        if not get_info(token, 1, buffer, len(buffer), ctypes.byref(required)):
+            raise PermissionError("Cannot read Windows process identity")
+        # TOKEN_USER begins with SID_AND_ATTRIBUTES; its first field is PSID.
+        sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
+        text = wintypes.LPWSTR()
+        convert = advapi.ConvertSidToStringSidW
+        convert.argtypes, convert.restype = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)], wintypes.BOOL
+        if not convert(sid, ctypes.byref(text)):
+            raise PermissionError("Cannot decode Windows process identity")
+        try:
+            value = text.value
+            if not value or not re.fullmatch(r"S-1-[0-9-]+", value):
+                raise PermissionError("Invalid Windows process identity")
+            return value
+        finally:
+            free = kernel.LocalFree
+            free.argtypes, free.restype = [ctypes.c_void_p], ctypes.c_void_p
+            free(ctypes.cast(text, ctypes.c_void_p))
+    finally:
+        close(token)
 
 
 def no_links(path: str | Path) -> Path:
@@ -47,18 +93,14 @@ def restrict_permissions(path: str | Path, directory: bool = False) -> None:
             raise PermissionError("Private storage must belong to the current user")
         path.chmod(0o700 if directory else 0o600)
         return
-    result = subprocess.run(["whoami", "/user", "/fo", "csv", "/nh"], capture_output=True,
-                            text=True, check=True, creationflags=0x08000000)
-    sid = re.search(r"S-1-[0-9-]+", result.stdout)
-    if sid is None:
-        raise PermissionError("Cannot identify Windows user for private storage")
+    sid = windows_user_sid()
     advapi = ctypes.WinDLL("advapi32", use_last_error=True)
     descriptor = ctypes.c_void_p()
     convert = advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW
     convert.argtypes = [ctypes.c_wchar_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_ulong)]
     convert.restype = ctypes.c_int
     flags = "OICI" if directory else ""
-    if not convert(f"D:P(A;{flags};FA;;;{sid.group()})", 1, ctypes.byref(descriptor), None):
+    if not convert(f"D:P(A;{flags};FA;;;{sid})", 1, ctypes.byref(descriptor), None):
         raise PermissionError("Cannot create private Windows permissions")
     try:
         setter = advapi.SetFileSecurityW

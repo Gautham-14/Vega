@@ -1,5 +1,9 @@
 # Local setup and operation
 
+For the prepared development installation on this workstation, account,
+credential and verified recovery locations are in
+[LOCAL_OPERATIONS.md](LOCAL_OPERATIONS.md).
+
 Use a reviewed Python 3.11+ installation. Aegis launchers do not download
 dependencies or models automatically. Set up from a reviewed local wheelhouse
 and its separate SHA-256 manifest:
@@ -69,3 +73,9 @@ Data Owner and Security Officer approval. Host source is not modified.
 Use `help start`, `help coding`, `help models`, `help images`, `help security`,
 `help recovery`, and `help <command>` for exact arguments. `doctor` checks the
 local account, API, incident controls and receipt chain without calling models.
+
+For source-grounded industrial/document assistance, use `help advisory` and
+[WORKFLOW_READINESS.md](WORKFLOW_READINESS.md). `provider-preflight <id>` checks
+configuration without contacting a model. Plain shell prompts require a selected
+valid coding lease; an error never triggers a demo or a replacement model.
+`demo`/`pipeline` explicitly request the server's enabled deterministic fixture.

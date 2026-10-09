@@ -24,7 +24,8 @@ IMPLEMENTATION_PATHS = [Path(__file__), Path(providers.__file__), Path(tools.__f
                         Path(retrieval.__file__), Path(git_workspace.__file__), Path(tokenizer.__file__), Path(embedding.__file__), Path(lockdown.__file__),
                         Path(provider_assurance.__file__), Path(model_qualification.__file__), Path(bundle_custody.__file__), Path(offline_bundle.__file__)]
 IMPLEMENTATION_PATHS += [Path(__file__).parents[1] / "security" / (name + ".py") for name in (
-    "auth", "key_custody", "audit_anchor", "availability", "deployment", "attestor", "local_rpc", "quiescence", "validation_broker", "private_files")]
+    "auth", "key_custody", "audit_anchor", "availability", "deployment", "attestor", "local_rpc", "quiescence", "validation_broker", "private_files", "revocation")]
+IMPLEMENTATION_PATHS.append(Path(__file__).parents[1] / "knowledge" / "ranking.py")
 LOADED_IMPLEMENTATION = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in IMPLEMENTATION_PATHS}
 
 
@@ -126,6 +127,9 @@ def validate_lease(lease_id, identity, purpose):
         raise store.Denied("EXPIRED_PURPOSE_LEASE", "Coding lease expired")
     if store.get("coding-revocation", lease_id):
         raise store.Denied("REVOKED_PURPOSE_LEASE", "Coding lease was revoked")
+    from aegis.security.revocation import revoked
+    if revoked("coding-lease", lease_id):
+        raise store.Denied("REVOKED_PURPOSE_LEASE", "Coding lease was revoked")
     if purpose != lease["purpose"] or lease["purpose"] != PURPOSES[lease["mode"]] or lease["tools"] != tools.MODES[lease["mode"]]:
         raise store.Denied("PURPOSE_LEASE_MISMATCH", "Purpose or tools do not match the signed lease")
     policy.authorize_label(identity, lease["label"])
@@ -145,6 +149,8 @@ def revoke(lease_id, identity):
     policy.actor(identity, ["Data Owner"])
     with store.LOCK:
         verified("lease", lease_id)
+        from aegis.security.revocation import record
+        record("coding-lease", lease_id, identity)
         store.put("coding-revocation", lease_id, {"revoked_at": time.time(), "actor": identity})
         for task in store.all_objects("coding-task"):
             if task["lease_id"] == lease_id and task.get("ciphertext"):
@@ -219,6 +225,9 @@ def run(lease_id, prompt, purpose, identity, parent_task_id=None):
         transcript = []
         for turn in range(8):
             _, _, spec, _ = validate_lease(lease_id, identity, purpose)
+            spec = {**spec, "_cache_scope": {"task": task["id"], "user": identity, "lease": lease_id,
+                                           "repository_hash": task["repository_hash"], "capsule": task["capsule_id"]}}
+            spec["_dispatch_guard"] = lambda: validate_lease(lease_id, identity, purpose)
             if sum(len(m["content"]) for m in messages) > 48000:
                 raise store.Denied("CONTEXT_BUDGET_EXCEEDED", "Context budget reached; narrow the snapshot")
             if spec["provider"] != "reference":

@@ -27,6 +27,7 @@ from aegis.api.routes.auth import router as auth_router
 from aegis.api.routes.providers import router as providers_router
 from aegis.api.routes.telemetry import router as telemetry_router
 from aegis.api.routes.media import router as media_router
+from aegis.api.routes.advisory import router as advisory_router
 from aegis.api.limits import RequestBodyLimit
 from aegis.security import auth
 from aegis import telemetry
@@ -53,11 +54,13 @@ async def lifespan(app: FastAPI):
             from aegis.control.artifacts import sweep
             from aegis.coding.service import sweep as sweep_coding
             from aegis.media.service import sweep as sweep_media
+            from aegis.advisory.service import sweep as sweep_advisory
             while True:
                 try:
                     await asyncio.to_thread(sweep)
                     await asyncio.to_thread(sweep_coding)
                     await asyncio.to_thread(sweep_media)
+                    await asyncio.to_thread(sweep_advisory)
                     from aegis.security.availability import maintenance
                     await asyncio.to_thread(maintenance)
                 except Exception:
@@ -198,6 +201,7 @@ app.include_router(auth_router)
 app.include_router(providers_router)
 app.include_router(telemetry_router)
 app.include_router(media_router)
+app.include_router(advisory_router)
 
 
 @app.get("/api/endpoints", tags=["Operations"])

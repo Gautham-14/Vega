@@ -21,8 +21,8 @@ tokenizer = ["tokenizers>=0.21.0"]
 embeddings = ["sentence-transformers>=3.4.0"]
 cli = ["prompt_toolkit"]
 
-[tool.setuptools]
-packages = ["aegis"]
+[tool.setuptools.packages.find]
+include = ["aegis*"]
 
 [tool.pytest.ini_options]
 pythonpath = "."

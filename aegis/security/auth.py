@@ -242,7 +242,20 @@ def _invalidate_work(actor):
     """Caller holds LOCK. A reset must not revive previously authorized work."""
     for raw in store.all_objects("coding-lease"):
         if raw.get("user") == actor:
+            from aegis.security.revocation import record
+            record("coding-lease", raw["id"], "host-administrator")
             store.put("coding-revocation", raw["id"], {"revoked_at": time.time(), "actor": "host-administrator"})
+    from aegis.security.revocation import record
+    for raw in store.all_objects("lease"):
+        if raw.get("user") == actor:
+            record("lease", raw["id"], "host-administrator")
+    from aegis.advisory import service as advisory
+    for raw in store.all_objects("advisory-lease"):
+        if raw.get("user") == actor:
+            record("advisory-lease", raw["id"], "host-administrator")
+    for raw in store.all_objects("advisory-task"):
+        if raw.get("user") == actor and raw.get("ciphertext"):
+            advisory.destroy(advisory.read("task", raw["id"]), "REVOKED")
     from aegis.coding import service as coding
     for raw in store.all_objects("coding-task"):
         if raw.get("user") == actor and raw.get("ciphertext"):

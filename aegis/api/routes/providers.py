@@ -7,6 +7,7 @@ from aegis.security.auth import principal
 from aegis.security.model_qualification import QualificationSuite, run_candidate_suite
 from aegis.security import provider_assurance
 from aegis.security import media_qualification
+from aegis.advisory import qualification as advisory_qualification
 
 router = APIRouter(prefix="/api/providers", tags=["Local model providers"])
 
@@ -42,6 +43,11 @@ def probe(provider_id: str, identity=Depends(principal)):
     return providers.probe(provider_id, identity)
 
 
+@router.get("/{provider_id}/preflight")
+def preflight(provider_id: str, identity=Depends(principal)):
+    return providers.preflight(provider_id, identity)
+
+
 @router.post("/{provider_id}/qualify")
 def qualify_candidate(provider_id: str, req: QualificationSuite, identity=Depends(principal)):
     return run_candidate_suite(provider_id, req.model_dump(), identity)
@@ -50,6 +56,11 @@ def qualify_candidate(provider_id: str, req: QualificationSuite, identity=Depend
 @router.post("/{provider_id}/qualify-media")
 def qualify_media(provider_id: str, req: media_qualification.MediaSuite, identity=Depends(principal)):
     return media_qualification.run(provider_id, req, identity)
+
+
+@router.post("/{provider_id}/qualify-advisory")
+def qualify_advisory(provider_id: str, req: advisory_qualification.Suite, identity=Depends(principal)):
+    return advisory_qualification.run(provider_id, req, identity)
 
 
 @router.get("/{provider_id}/assurance")

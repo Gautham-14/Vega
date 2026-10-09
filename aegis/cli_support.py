@@ -3,6 +3,17 @@ import re
 
 
 GUIDES = {
+    "advisory": [
+        "Data Owner: advisory-source source.json — import fields, revision, authority and disclosure rules",
+        "Operator: advisory-register <provider-id> — measure the configured local text-provider stack without contacting it",
+        "Model Custodian and Security Officer each approve; Model Custodian activates the Capsule",
+        "Data Owner: advisory-lease lease.json — bind user, purpose, equipment and source revisions",
+        "Operator: advisory-run request.json — explicit model inference; advisory-task <id> reads grounded output",
+        "Quotes and fixed division are checked; inferred analysis is labeled for human review; OT writes are absent",
+        "advisory-export-request <id>; independent reviewers approve; advisory-export <id> <approval-id>",
+        "advisory-revoke <lease-id> or advisory-close <task-id> — revoke access and retained content",
+        "INTERNAL sources require independent provider release. No model weights are downloaded or loaded by setup.",
+    ],
     "quickstart": [
         "Host administrator: users set <name> --like operator; provision data-owner, model-custodian and security-officer accounts separately",
         "Sign in as Data Owner: import <directory> --name <workspace-name>; note the returned repository ID",

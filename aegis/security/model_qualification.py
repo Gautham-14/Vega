@@ -43,6 +43,7 @@ class QualificationSuite(BaseModel):
 
 
 def _text_response(spec, prompt):
+    providers.check_context(spec, [{"role": "user", "content": prompt}])
     providers.check_model(spec, providers.model_listing(spec))
     if spec.get("protocol", "ollama") == "openai-compatible":
         result = providers.request_json("/v1/chat/completions", {
@@ -68,6 +69,8 @@ def _text_response(spec, prompt):
         content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, str) or not 1 <= len(content) <= 20_000:
         raise ValueError("Qualification output is empty or too large")
+    if message.get("tool_calls") or message.get("refusal") or message.get("role", "assistant") != "assistant":
+        raise ValueError("Qualification response is not a plain assistant completion")
     return content
 
 

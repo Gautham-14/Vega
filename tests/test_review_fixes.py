@@ -252,12 +252,15 @@ def test_provider_deadline_interrupts_a_stalled_response():
         assert interrupted.wait(3), "Total deadline did not interrupt header receive"
         raise OSError("synthetic stalled header")
     connection.getresponse.side_effect = stalled
-    started = time.monotonic()
+    # Measure the transport deadline from dispatch, excluding storage admission
+    # and authenticated-ledger verification performed before the HTTP request.
+    dispatched = []
+    connection.request.side_effect = lambda *args, **kwargs: dispatched.append(time.monotonic())
     with patch.object(providers.http.client, "HTTPConnection", return_value=connection):
         with pytest.raises(store.Denied) as error:
             providers.request_json("/api/tags", spec={"timeout_seconds": 1})
     assert error.value.code == "LOCAL_MODEL_UNAVAILABLE"
-    assert time.monotonic() - started < 3
+    assert len(dispatched) == 1 and time.monotonic() - dispatched[0] < 3
     connection.sock.shutdown.assert_called_once()
     connection.close.assert_called_once()
 

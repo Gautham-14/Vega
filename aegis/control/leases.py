@@ -1,7 +1,7 @@
 """Signed purpose leases. All dimensions are checked again before export."""
 import hmac
 import time
-from aegis.control.store import verify_signature, Denied, uid, sign, put, require, receipt
+from aegis.control.store import verify_signature, Denied, uid, sign, put, require, receipt, LOCK
 from aegis.control.policy import actor, authorize_label, SKILLS
 
 FIELDS = {"source_ids", "compartments", "purpose", "capsule_id", "skill", "user", "role", "expires_at",
@@ -52,14 +52,36 @@ def validate(lease_id, *, user, capsule_id, skill, purpose, source_ids, compartm
         raise Denied("INVALID_LEASE_SIGNATURE", "Purpose lease was modified", lease_id)
     if value["expires_at"] <= time.time():
         raise Denied("EXPIRED_PURPOSE_LEASE", "Purpose lease has expired", lease_id)
+    from aegis.security.revocation import revoked
+    if revoked("lease", lease_id):
+        raise Denied("REVOKED_PURPOSE_LEASE", "Purpose lease was revoked", lease_id)
     expected = {"user": user, "role": actor(user)["role"], "capsule_id": capsule_id,
                 "skill": skill, "purpose": purpose, "output_type": output_type}
     if any(value[k] != v for k, v in expected.items()):
         raise Denied("PURPOSE_LEASE_MISMATCH", "Purpose, Capsule, skill, identity or output does not match", lease_id)
     if not set(source_ids).issubset(value["source_ids"]) or not set(compartments).issubset(value["compartments"]):
         raise Denied("COMPARTMENT_VIOLATION", "Requested data is outside the lease", lease_id)
+    from aegis.control.data import source_current
+    for source_id in source_ids:
+        source = require("source", source_id)
+        authorize_label(user, {"compartments": [source["compartment"]], "classification": source["classification"]})
+        source_current(source, skill, source["equipment"])
     if (training and not value["allow_training"]) or (persistent_memory and not value["allow_persistent_memory"]):
         raise Denied("LEARNING_DISABLED", "Lease denies learning or persistent memory", lease_id)
     if export and (not value["allow_export"] or recipient != value["recipient"]):
         raise Denied("UNAUTHORIZED_EXPORT", "Lease denies this export or recipient", lease_id)
     return value
+
+
+def revoke(lease_id, identity):
+    actor(identity, ["Data Owner", "Security Officer"])
+    from aegis.security.revocation import record
+    with LOCK:
+        require("lease", lease_id)
+        record("lease", lease_id, identity)
+        from aegis.control.artifacts import erase
+        from aegis.control.store import all_objects
+        for artifact in all_objects("artifact"):
+            if artifact["lease_id"] == lease_id and artifact["status"] == "RETAINED":
+                erase(artifact)
+    return {"status": "REVOKED", "lease_id": lease_id}

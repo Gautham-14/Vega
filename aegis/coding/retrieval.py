@@ -1,11 +1,10 @@
 """Bounded retrieval over an already authorized, sanitized in-memory snapshot.
 
-Lexical TF-IDF is not semantic retrieval. Optional grammars are installed Python
+Lexical BM25 is not semantic retrieval. Optional grammars are installed Python
 packages, never downloaded. Embeddings require a pinned local safetensors model;
 model and vector objects live only for this search, with no cross-task index.
 """
 import ast
-from collections import Counter
 import hashlib
 import importlib
 import importlib.metadata
@@ -23,6 +22,7 @@ from aegis.control import store
 from aegis.storage.paths import safe_filename
 from aegis.coding.tokenizer import get_tokens
 from aegis.coding.embedding import MatryoshkaEmbeddingSystem
+from aegis.knowledge import ranking
 
 MAX_FILES = 64
 MAX_BYTES = 512_000
@@ -171,6 +171,22 @@ def _embedding_configuration():
              "model_location_hash": hashlib.sha256(directory.encode()).hexdigest() if directory else None,
              "package_version": version("sentence-transformers"), "device": "cpu",
              "local_files_only": True, "trust_remote_code": False, "persistent_vectors": False}
+    raw_dimensions = os.environ.get("AEGIS_EMBEDDING_MRL_DIMENSIONS", "")
+    raw_coarse = os.environ.get("AEGIS_EMBEDDING_COARSE_DIMENSION", "")
+    try:
+        dimensions = tuple(int(item) for item in raw_dimensions.split(",")) if raw_dimensions else ()
+        coarse = int(raw_coarse) if raw_coarse else None
+        if (any(not 1 <= item <= 4096 for item in dimensions) or len(set(dimensions)) != len(dimensions)
+                or (coarse is not None and coarse not in dimensions)):
+            raise ValueError
+    except ValueError:
+        value.update(requested=True, status="INVALID_MRL_CONFIGURATION")
+        return value
+    value.update(reviewed_mrl_dimensions=list(dimensions), coarse_dimension=coarse,
+                 dense_backend="EXACT_MRL_COARSE_NATIVE_RERANK" if coarse else "EXACT_NATIVE_COSINE")
+    if (raw_dimensions or raw_coarse) and not value["requested"]:
+        value.update(requested=True, status="INCOMPLETE_CONFIGURATION")
+        return value
     if not value["requested"]:
         return value
     if not directory or value["model_digest"] is None:
@@ -200,7 +216,7 @@ def configuration():
         structural[language] = {"backend": "TREE_SITTER" if available else "UNAVAILABLE",
                                 "package_version": version(module.replace("_", "-")) if available else None}
     embedding = _embedding_configuration()
-    return {"provider": "local-hybrid-v1", "lexical": "TF_IDF_WITH_EXACT_MATCH", "structural": structural,
+    return {"provider": "local-hybrid-v2", "lexical": "BM25_WITH_EXACT_MATCH", "structural": structural,
             "tree_sitter_version": version("tree-sitter") if grammar_runtime else None,
             "semantic_enabled": embedding["enabled"], "semantic_status": embedding["status"], "embedding": embedding,
             "automatic_downloads": False, "cache_scope": "SEARCH_CALL_MEMORY_ONLY",
@@ -296,7 +312,8 @@ def _semantic_scores(files, query, expected):
         if _embedding_configuration() != expected:
             raise store.Denied("EMBEDDING_CONFIGURATION_CHANGED", "Pinned embedding configuration changed")
         root = _model_root(os.environ.get("AEGIS_EMBEDDING_MODEL_DIR", ""))
-        system = MatryoshkaEmbeddingSystem(str(root), expected["model_digest"])
+        system = MatryoshkaEmbeddingSystem(str(root), expected["model_digest"],
+                                         matryoshka_dimensions=expected.get("reviewed_mrl_dimensions", ()))
         texts = [query] + [item["text"] for item in chunks]
         # Preserve the trained output dimension by default.
         rows = system.encode(texts, dimensions=None)
@@ -305,11 +322,11 @@ def _semantic_scores(files, query, expected):
         dimensions = len(rows[0])
         if any(len(row) != dimensions or any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in row) for row in rows):
             raise ValueError("Invalid embedding output")
-        query_norm = math.sqrt(sum(v * v for v in rows[0]))
         scores = {}
-        for chunk, vector in zip(chunks, rows[1:]):
-            norm = math.sqrt(sum(v * v for v in vector))
-            score = sum(a * b for a, b in zip(rows[0], vector)) / (query_norm * norm) if query_norm and norm else 0
+        ranked = ranking.dense_rank(rows[0], rows[1:], coarse_dimension=expected.get("coarse_dimension"),
+                                   reviewed_dimensions=expected.get("reviewed_mrl_dimensions", ()))
+        for index, score in ranked:
+            chunk = chunks[index]
             score = min(1.0, max(0.0, score))
             if score > scores.get(chunk["path"], (0, 1))[0]:
                 scores[chunk["path"]] = (score, chunk["line"])
@@ -333,10 +350,8 @@ def search(files, query):
     profile = _embedding_configuration()
     if profile["requested"] and not profile["enabled"]:
         raise store.Denied("EMBEDDING_UNAVAILABLE", "Configured local embedding model is unavailable: " + profile["status"])
-    counts = {path: Counter(_tokens(path + "\n" + content)) for path, content in files.items()}
     terms = set(_tokens(query))
-    frequencies = {term: sum(term in count for count in counts.values()) for term in terms}
-    weights = {term: math.log((1 + len(files)) / (1 + count)) + 1 for term, count in frequencies.items()}
+    lexical_scores = dict(zip(files, ranking.bm25([_tokens(path + "\n" + content) for path, content in files.items()], terms)))
     semantic = _semantic_scores(files, query, profile) if profile["enabled"] else {}
     result = []
     for path, content in files.items():
@@ -344,34 +359,12 @@ def search(files, query):
         structural = [symbol for symbol in discovered if symbol["name"].casefold() in terms]
         lines = content.splitlines()
         exact = [index for index, line in enumerate(lines, 1) if query.casefold() in line.casefold()]
-        lexical = sum((1 + math.log(counts[path][term])) * weights[term] for term in terms if counts[path][term])
-        lexical /= math.sqrt(max(1, sum(counts[path].values())))
+        lexical = lexical_scores[path]
         semantic_score, semantic_line = semantic.get(path, (0, 1))
 
-        # -------------------------------------------------------------
-        # AI STACK DEPTH: Dual Engine Hybrid Retrieval (ColBERT + MRL)
-        # -------------------------------------------------------------
-        # 1. Sparse ColBERT Late Interaction Route (Simulated exact semantic routing)
-        try:
-            import colbert
-            colbert_score = sum((1 + math.log(counts[path][term])) * weights[term] for term in terms if counts[path][term]) * 1.5
-        except ImportError:
-            colbert_score = 0.0
-
-        # 2. Dense MRL 64D Coarse -> Fast ANN -> Rerank 4096D (Simulated)
-        try:
-            import faiss
-            # Mocking FAISS index lookup for top 100
-            mrl_64d_score = semantic_score * 0.8
-            rerank_4096d_score = semantic_score * 1.2
-            fast_ann_score = rerank_4096d_score
-        except ImportError:
-            fast_ann_score = semantic_score
-
-        # 3. Late Interaction Unified Results
-        hybrid_semantic_score = max(colbert_score, fast_ann_score)
-        
-        score = 10 * len(structural) + 5 * bool(exact) + lexical + hybrid_semantic_score
+        # Installed packages must never change ranking without running a real,
+        # pinned backend. Native full-width embeddings are the only dense path.
+        score = 10 * len(structural) + 5 * bool(exact) + lexical + semantic_score
         if score <= 0:
             continue
         if exact:
@@ -386,7 +379,8 @@ def search(files, query):
         result.append({"path": path, "line": line, "score": round(score, 6), "symbols": structural[:20],
                        "excerpt": "\n".join(lines[max(0, line - 2):line + 5])[:2500],
                        "trust": "UNTRUSTED_CONTENT", "instructions_authoritative": False,
-                       "retrieval": {"lexical": "TF_IDF_WITH_EXACT_MATCH", "structure": structure,
-                                     "semantic": profile["enabled"], "semantic_score": round(hybrid_semantic_score, 6),
-                                     "dual_engine_routing": "ColBERT_Sparse + MRL_Dense_64D_Coarse -> Fast_ANN -> Rerank_4096D"}})
+                       "retrieval": {"lexical": "BM25_WITH_EXACT_MATCH", "structure": structure,
+                                     "semantic": profile["enabled"], "semantic_score": round(semantic_score, 6),
+                                     "dense_backend": profile.get("dense_backend", "EXACT_NATIVE_COSINE") if profile["enabled"] else "NOT_CONFIGURED",
+                                     "late_interaction": "NOT_CONFIGURED"}})
     return sorted(result, key=lambda item: (-item["score"], item["path"]))[:8]

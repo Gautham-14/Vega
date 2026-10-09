@@ -3,6 +3,7 @@ import http.client
 import hmac
 import ipaddress
 import json
+import math
 import os
 import re
 import time
@@ -38,6 +39,25 @@ SUPPORTED = [
     {"engine": "openai-compatible", "protocol": "openai-compatible", "digest_verification": "CUSTODIAN_ASSERTED"},
     {"engine": "automatic1111", "protocol": "sd-webui", "default_endpoint": "http://127.0.0.1:7860", "digest_verification": "SERVER_REPORTED_SHA256"},
 ]
+
+
+def decode_json(raw):
+    """Reject ambiguous duplicate keys and non-finite JSON at provider boundaries."""
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError("Duplicate JSON field")
+            result[key] = value
+        return result
+    def nonfinite(value):
+        raise ValueError("Non-finite JSON number")
+    def finite_float(value):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError("Non-finite JSON number")
+        return number
+    return json.loads(raw, object_pairs_hook=pairs, parse_constant=nonfinite, parse_float=finite_float)
 
 
 def loopback_endpoint(value, protocol="ollama"):
@@ -76,6 +96,7 @@ class ProviderRequest(BaseModel):
     max_response_bytes: int = Field(default=1_000_000, ge=4096, le=12_000_000)
     context_tokens: int = Field(default=16384, ge=4096, le=1_048_576)
     vision: bool = False
+    structured_output: Literal["json_schema", "json_object", "prompt_json"] = "json_schema"
     bundle_record_id: str | None = Field(default=None, pattern=r"^BUNDLE-[a-f0-9]{32}$")
 
     @model_validator(mode="after")
@@ -144,7 +165,8 @@ def specification(provider):
                   "timeout_seconds", "max_response_bytes", "digest_verification")
         return {"provider": value["id"], **{key: value[key] for key in fields},
                 "context_tokens": value.get("context_tokens", 16384), "vision": value.get("vision", False),
-                "bundle_record_id": value.get("bundle_record_id")}
+                "bundle_record_id": value.get("bundle_record_id"),
+                "structured_output": value.get("structured_output", "json_schema")}
     model = os.environ.get("AEGIS_OLLAMA_MODEL", "")
     digest = os.environ.get("AEGIS_OLLAMA_DIGEST", "")
     if (provider != "ollama" or os.environ.get("AEGIS_OLLAMA_LOCAL_ONLY") != "1"
@@ -157,7 +179,7 @@ def specification(provider):
 def configuration_hash(spec):
     """Bind assurance evidence only to fields that affect local inference."""
     fields = ("provider", "protocol", "engine", "endpoint", "model", "digest", "local_only", "api_key_env",
-              "max_tokens", "timeout_seconds", "max_response_bytes", "context_tokens", "vision", "bundle_record_id")
+              "max_tokens", "timeout_seconds", "max_response_bytes", "context_tokens", "vision", "bundle_record_id", "structured_output")
     return store.digest({key: spec.get(key) for key in fields if key in spec})
 
 
@@ -171,13 +193,13 @@ def require_sensitive_boundary(spec, classification):
         return require_active_release(spec)
 
 
-def request_json(path, body=None, *, spec=None, media=False):
+def request_json(path, body=None, *, spec=None, media=False, before_send=None):
     from aegis.security.availability import admit
     with admit("provider", provider=(spec or {}).get("provider", "ollama")):
-        return _request_json(path, body, spec=spec, media=media)
+        return _request_json(path, body, spec=spec, media=media, before_send=before_send)
 
 
-def _request_json(path, body=None, *, spec=None, media=False):
+def _request_json(path, body=None, *, spec=None, media=False, before_send=None):
     # Direct numeric loopback: no proxies, DNS, redirects, arbitrary URLs, or pull API.
     from aegis.security import lockdown
     generation = lockdown.check()
@@ -190,6 +212,10 @@ def _request_json(path, body=None, *, spec=None, media=False):
             raise store.Denied("PROVIDER_RUNTIME_UNVERIFIED", "Production model traffic requires a supervised isolated provider")
     if body is not None and config.get("engine") == "llama.cpp":
         body = {**body, "cache_prompt": False}
+    if body is not None and config.get("engine") == "vllm":
+        # A gateway-issued namespace, never a model/user-supplied identifier.
+        # Unique per call unless a governed workflow supplies its task scope.
+        body = {**body, "cache_salt": store.sign(config.get("_cache_scope") or store.uid("CACHE"), "provider-cache-v1")}
     protocol = config.get("protocol", "ollama")
     operations = {"ollama": {"/api/tags": "GET", "/api/chat": "POST"},
                   "openai-compatible": {"/v1/models": "GET", "/v1/chat/completions": "POST"},
@@ -235,6 +261,11 @@ def _request_json(path, body=None, *, spec=None, media=False):
         if payload is not None and len(payload) > (12_000_000 if media else 1_000_000):
             raise ValueError("Model request exceeded the limit")
         lockdown.check(generation)
+        guard = before_send or config.get("_dispatch_guard")
+        if guard is not None:
+            if not callable(guard):
+                raise store.Denied("AUTHORIZATION_REQUIRED", "Provider dispatch guard is invalid")
+            guard()
         if body is not None and config.get("_sensitive_release_id"):
             from aegis.security.provider_assurance import require_active_release
             release = require_active_release(config)
@@ -251,7 +282,7 @@ def _request_json(path, body=None, *, spec=None, media=False):
         raw = response.read(limit + 1)
         if timed_out.is_set() or len(raw) > limit:
             raise ValueError("Invalid model response")
-        result = json.loads(raw)
+        result = decode_json(raw)
         if not isinstance(result, dict) and not (path == "/sdapi/v1/sd-models" and isinstance(result, list)):
             raise ValueError("Expected a JSON object")
         lockdown.check(generation)
@@ -312,6 +343,26 @@ def probe(provider_id, identity):
     return result
 
 
+def preflight(provider_id, identity):
+    """Configuration readiness only: never connects, probes, loads or downloads."""
+    policy.actor(identity)
+    spec = specification(provider_id)
+    if provider_id == "reference":
+        return {"provider": provider_id, "status": "DETERMINISTIC_FIXTURE", "model_calls": 0,
+                "models_loaded": False, "compatible_workflows": ["coding-fixture"]}
+    compatible = ["media-generate", "media-edit"] if spec.get("protocol") == "sd-webui" else ["coding", "advisory"]
+    if spec.get("vision"):
+        compatible.append("media-understand")
+    return {"provider": provider_id, "status": "CONFIGURED_NOT_PROBED", "compatible_workflows": compatible,
+            "model": spec["model"], "configuration_sha256": configuration_hash(spec),
+            "structured_output": spec.get("structured_output", "json_schema"), "model_calls": 0,
+            "models_loaded": False, "automatic_downloads": False,
+            "tokenizer": "NATIVE_INFERENCE_SERVER", "hardware": "SERVER_MANAGED_NOT_QUALIFIED",
+            "remaining_gates": ["operator-started local serving process", "explicit candidate qualification",
+                                "approved workflow Capsule", "purpose authorization",
+                                "independent release evidence for INTERNAL data"]}
+
+
 def propose(spec, messages, mode, turn):
     if spec.get("protocol") == "sd-webui":
         raise store.Denied("PROVIDER_CAPABILITY_MISMATCH", "Diffusion providers are available through media tasks")
@@ -328,19 +379,50 @@ def propose(spec, messages, mode, turn):
                     {"tool": "python.syntax", "arguments": {}}])
         return Proposal(message="Reference fixture complete. Review the port boundary; valid ports are 1 through 65535. "
                         "This deterministic adapter does not solve arbitrary requests. Tests have not run.", actions=[])
+    result = generate_structured(spec, messages, Proposal, schema_name="aegis_proposal")
+    return result
+
+
+def generate_structured(spec, messages, response_type, *, schema_name="aegis_response", before_send=None):
+    """Validated structured generation for an explicitly selected local server.
+
+    No model initialization, HTTP call or capability guessing at construction.
+    JSON enforcement is pinned in the profile; unsupported schemas do not cause
+    automatic retries, weaker parsing, provider switches or remote fallback.
+    """
+    if spec.get("provider") == "reference" or spec.get("protocol") == "sd-webui":
+        raise store.Denied("PROVIDER_CAPABILITY_MISMATCH", "Structured text requires a configured local text provider")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", schema_name):
+        raise ValueError("Invalid schema name")
     check_context(spec, messages)
     check_model(spec, model_listing(spec))
     compatible = spec.get("protocol") == "openai-compatible"
     tokens = spec.get("max_tokens", 4096)
+    schema = response_type.model_json_schema()
     if compatible:
-        result = request_json("/v1/chat/completions", {"model": spec["model"], "messages": messages, "stream": False,
-                              "temperature": 0, "max_tokens": tokens, "n": 1,
-                              "response_format": {"type": "json_schema", "json_schema": {
-                                  "name": "aegis_proposal", "strict": True, "schema": Proposal.model_json_schema()}}}, spec=spec)
+        body = {"model": spec["model"], "messages": messages, "stream": False,
+                "temperature": 0, "max_tokens": tokens, "n": 1}
+        output_mode = spec.get("structured_output", "json_schema")
+        if output_mode == "json_schema":
+            body["response_format"] = {"type": "json_schema", "json_schema": {
+                "name": schema_name, "strict": True, "schema": schema}}
+        elif output_mode == "json_object":
+            body["response_format"] = {"type": "json_object"}
+        elif output_mode != "prompt_json":
+            raise store.Denied("PROVIDER_CAPABILITY_MISMATCH", "Unknown structured response configuration")
+        if output_mode != "json_schema":
+            body["messages"] = [{"role": "system", "content": "Return exactly one JSON object matching this schema: " +
+                                 json.dumps(schema, allow_nan=False)}, *messages]
+            check_context(spec, body["messages"])
+        path = "/v1/chat/completions"
     else:
-        result = request_json("/api/chat", {"model": spec["model"], "messages": messages, "stream": False,
-                              "format": Proposal.model_json_schema(), "keep_alive": 0,
-                              "options": {"temperature": 0, "num_predict": tokens, "num_ctx": spec.get("context_tokens", 16384)}}, spec=spec)
+        body = {"model": spec["model"], "messages": messages, "stream": False,
+                "format": schema, "keep_alive": 0,
+                "options": {"temperature": 0, "num_predict": tokens, "num_ctx": spec.get("context_tokens", 16384)}}
+        path = "/api/chat"
+    if before_send is not None:
+        before_send()
+    result = request_json(path, body, spec=spec, before_send=before_send)
     try:
         if compatible:
             choices = result["choices"]
@@ -355,8 +437,10 @@ def propose(spec, messages, mode, turn):
             message = result["message"]
         if message.get("tool_calls") or message.get("refusal"):
             raise ValueError("Only structured proposals are accepted")
-        return Proposal.model_validate_json(message["content"])
-    except (KeyError, TypeError, ValueError, AttributeError, IndexError):
+        if message.get("role", "assistant") != "assistant" or not isinstance(message.get("content"), str):
+            raise ValueError("Expected an assistant JSON response")
+        return response_type.model_validate(decode_json(message["content"]))
+    except (KeyError, TypeError, ValueError, AttributeError, IndexError, RecursionError):
         raise store.Denied("INVALID_MODEL_PROPOSAL", "Model response does not match the approved proposal schema") from None
 
 

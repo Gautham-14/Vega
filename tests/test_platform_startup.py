@@ -181,8 +181,9 @@ assert stat.S_IMODE((config.DATA_DIR / 'control.key').stat().st_mode) == 0o600
 @pytest.mark.skipif(os.name != "nt", reason="Windows batch wrapper")
 def test_windows_wrapper_help_and_exit_code():
     command = ROOT / "Aegis.bat"
-    if not (ROOT / ".runtime" / "python" / "python.exe").is_file():
-        pytest.skip("Local reviewed bootstrap interpreter is not available")
+    if not any(path.is_file() for path in (ROOT / ".runtime" / "python" / "python.exe",
+                                           ROOT / ".venv" / "Scripts" / "python.exe")):
+        pytest.skip("Local reviewed bootstrap or dedicated interpreter is not available")
     result = subprocess.run(["cmd", "/c", str(command), "--help"], cwd=ROOT.parent,
                             capture_output=True, text=True, timeout=15)
     assert result.returncode == 0 and "macOS" in result.stdout

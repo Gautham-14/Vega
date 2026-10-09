@@ -25,9 +25,9 @@ Windows host were changed by this implementation.
 Use the dedicated environment and the same `AEGIS_DATA_DIR` as the API.
 
 ```text
-python aegis_cli.py users mfa-enroll security-officer
-python aegis_cli.py login security-officer --mfa
-python aegis_cli.py step-up
+python -m aegis.cli users mfa-enroll security-officer
+python -m aegis.cli login security-officer --mfa
+python -m aegis.cli step-up
 ```
 
 Enrollment displays the authenticator seed once. Store it in an authenticator;
@@ -38,9 +38,9 @@ period, a one-step clock window and persistent replay prevention.
 For a development keyring, stop Aegis before migration or rotation:
 
 ```text
-python aegis_cli.py keys init
-python aegis_cli.py keys status
-python aegis_cli.py keys rotate
+python -m aegis.cli keys init
+python -m aegis.cli keys status
+python -m aegis.cli keys rotate
 ```
 
 Windows keyrings are DPAPI protected; POSIX files use owner-only permissions.

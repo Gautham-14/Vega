@@ -529,7 +529,7 @@ def build_parser():
     commands.add_parser("context", help="Inspect identity, selected lease and current incident authorization")
     commands.add_parser("compose", help="Multiline prompt: /send, /preview, /clear or /cancel; shell only")
     for name, help_text in {
-        "shell": "Interactive operator shell (default)", "status": "Authentication and local runtime status", "logout": "Revoke and clear this server's session", "whoami": "Show authenticated identity", "state": "Coding workspace state", "control-state": "Control plane state", "providers": "List local provider profiles and supported connections", "tasks": "List your coding tasks", "leases": "List visible coding leases", "repositories": "List visible repository snapshots", "validate": "Run local negative-case validation", "telemetry": "Read measured local telemetry", "receipts": "List control receipts", "endpoints": "Discover available API endpoints", "demo-prepare": "Prepare explicit control demo", "demo-activate": "Activate explicit control demo", "coding-fixture": "Import explicit coding demo fixture", "sandbox": "Inspect sandbox availability and enforcement", "demo": "Run 8-Step Sovereign Task Runner pipeline", "pipeline": "Execute Sovereign Verification workflow with live multi-model audit",
+        "shell": "Interactive operator shell (default)", "status": "Authentication and local runtime status", "logout": "Revoke and clear this server's session", "whoami": "Show authenticated identity", "state": "Coding workspace state", "control-state": "Control plane state", "providers": "List local provider profiles and supported connections", "tasks": "List your coding tasks", "leases": "List visible coding leases", "repositories": "List visible repository snapshots", "validate": "Run local negative-case validation", "telemetry": "Read measured local telemetry", "receipts": "List control receipts", "endpoints": "Discover available API endpoints", "demo-prepare": "Prepare explicit control demo", "demo-activate": "Activate explicit control demo", "coding-fixture": "Import explicit coding demo fixture", "sandbox": "Inspect sandbox availability and enforcement", "demo": "Run explicitly enabled deterministic control fixture", "pipeline": "Run explicitly enabled deterministic control fixture",
     }.items():
         subp = commands.add_parser(name, help=help_text)
         if name in {"demo", "pipeline"}:
@@ -558,6 +558,9 @@ def build_parser():
     media_qualification = commands.add_parser("provider-qualify-media", help="Run PUBLIC vision/OCR/generation/editing candidate regression tests")
     media_qualification.add_argument("id")
     media_qualification.add_argument("suite")
+    advisory_qualification = commands.add_parser("provider-qualify-advisory", help="Explicit PUBLIC advisory contract tests; runs a model only when requested")
+    advisory_qualification.add_argument("id")
+    advisory_qualification.add_argument("suite")
     embed = commands.add_parser("embedding-qualify", help="Host admin: run PUBLIC ranking cases against pinned local embeddings")
     embed.add_argument("directory")
     embed.add_argument("digest")
@@ -575,6 +578,7 @@ def build_parser():
     release.add_argument("id", help="Registered live provider ID")
     release.add_argument("approval_id", help="Approved provider-release review ID")
     commands.add_parser("provider-assurance", help="Revalidate and show a provider's sensitive-data gate").add_argument("id")
+    commands.add_parser("provider-preflight", help="Inspect configuration readiness without connecting to or loading a model").add_argument("id")
     commands.add_parser("provider-revoke-release", help="Security Officer revokes a provider release immediately").add_argument("id")
     release_review = commands.add_parser("provider-release-review", help="Review the exact qualification, process and network evidence")
     release_review.add_argument("id", help="Registered live provider ID")
@@ -602,6 +606,16 @@ def build_parser():
     drill.add_argument("file")
     drill.add_argument("directory")
     commands.add_parser("media-capabilities", help="Inspect local image support and limits")
+    commands.add_parser("advisory-capabilities", help="Inspect read-only advisory workflows; no model calls")
+    commands.add_parser("advisory-sources", help="List sources visible to your account")
+    commands.add_parser("advisory-register", help="Register a local text-provider advisory Capsule").add_argument("provider")
+    for name in ("advisory-source", "advisory-lease", "advisory-lease-review", "advisory-run"):
+        commands.add_parser(name, help="Submit an explicit advisory request JSON file").add_argument("file")
+    for name in ("advisory-task", "advisory-close", "advisory-revoke", "advisory-export-request"):
+        commands.add_parser(name, help="Inspect or manage purpose-bound advisory work").add_argument("id")
+    advisory_export = commands.add_parser("advisory-export", help="Retrieve independently approved advisory export")
+    advisory_export.add_argument("id")
+    advisory_export.add_argument("approval_id")
     commands.add_parser("media-register", help="Register a vision/diffusion Capsule for approval").add_argument("provider")
     media = commands.add_parser("media-prepare", help="Prepare image request JSON and explicitly named local images for review")
     media.add_argument("file")
@@ -787,6 +801,22 @@ def execute(args, client):
                 else bundle_custody.revoke(args.id))
     if command == "media-capabilities":
         return client.call("/media/capabilities")
+    if command in {"advisory-capabilities", "advisory-sources"}:
+        return client.call("/advisory/" + command.removeprefix("advisory-"))
+    if command == "advisory-register":
+        return client.call("/advisory/capsules", "POST", {"provider": args.provider})
+    if command in {"advisory-source", "advisory-lease", "advisory-lease-review", "advisory-run"}:
+        endpoint = {"advisory-source": "sources", "advisory-lease": "leases", "advisory-lease-review": "leases/review", "advisory-run": "tasks"}[command]
+        return client.call("/advisory/" + endpoint, "POST", json_file(args.file))
+    if command == "advisory-revoke":
+        return client.call(f"/advisory/leases/{segment(args.id)}/revoke", "POST")
+    if command in {"advisory-task", "advisory-close", "advisory-export-request", "advisory-export"}:
+        endpoint = f"/advisory/tasks/{segment(args.id)}"
+        if command == "advisory-task":
+            return client.call(endpoint)
+        suffix = command.removeprefix("advisory-")
+        return client.call(endpoint + "/" + suffix, "POST",
+                           {"approval_id": args.approval_id} if command == "advisory-export" else None)
     if command == "media-register":
         return client.call("/media/capsules", "POST", {"provider": args.provider})
     if command == "media-prepare":
@@ -841,7 +871,7 @@ def execute(args, client):
         return {"authentication": client.call("/auth/status", public=True), "coding": client.call("/coding/status", public=True), "api_url": client.url}
     if command in {"demo", "pipeline"}:
         prompt_val = getattr(args, "prompt", None) or "Review Pump P-204 vibration readings against engineering SOP"
-        return run_sovereign_pipeline_ui(prompt_val, plain=getattr(args, "plain", False))
+        return run_sovereign_pipeline_ui(prompt_val, plain=getattr(args, "plain", False), client=client)
     get_routes = {"whoami": "/auth/me", "state": "/coding/state", "control-state": "/control/state", "providers": "/providers", "tasks": "/coding/tasks", "leases": "/coding/leases", "repositories": "/coding/repositories", "telemetry": "/telemetry/latest", "endpoints": "/endpoints", "receipts": "/control/receipts", "sandbox": "/coding/sandbox"}
     if command in get_routes:
         return client.call(get_routes[command])
@@ -850,6 +880,8 @@ def execute(args, client):
         return client.call(post_routes[command], "POST")
     if command == "provider":
         return client.call(f"/providers/{segment(args.id)}")
+    if command == "provider-preflight":
+        return client.call(f"/providers/{segment(args.id)}/preflight")
     if command == "provider-add":
         return client.call("/providers", "POST", json_file(args.file))
     if command == "provider-probe":
@@ -858,6 +890,8 @@ def execute(args, client):
         return client.call(f"/providers/{segment(args.id)}/qualify", "POST", json_file(args.suite))
     if command == "provider-qualify-media":
         return client.call(f"/providers/{segment(args.id)}/qualify-media", "POST", json_file(args.suite))
+    if command == "provider-qualify-advisory":
+        return client.call(f"/providers/{segment(args.id)}/qualify-advisory", "POST", json_file(args.suite))
     if command == "embedding-qualify":
         from aegis.security.embedding_qualification import run
         from aegis.control import store
@@ -967,105 +1001,13 @@ def compose(client):
             lines.append(line)
 
 
-def run_sovereign_pipeline_ui(prompt="Review Pump P-204 vibration readings against engineering SOP", plain=False):
-    styled = has_rich and not plain
-    
-    from aegis.storage.database import init_db, execute_write
-    from aegis.hardware.simulation import set_active_hardware_profile_name
-    from aegis.knowledge.registry import add_document
-    from aegis.models.profiles import DEMO_MODEL_PROFILES
-    from aegis.runtime.task_runner import TaskRunner
-    
-    init_db()
-    set_active_hardware_profile_name("PROFILE_AI_NODE")
-    
-    # Ensure demo documents are present in sovereign registry
-    demo_docs = [
-        {"id": "DOC-003", "filename": "Pump_SOP_Rev8_NEW.pdf", "title": "Pump_SOP", "revision": "8", "status": "CURRENT_APPROVED", "equipment_id": "Pump P-204", "department": "Engineering", "classification": "INTERNAL", "effective_date": "2024-01-01", "content": "Permitted continuous vibration limit is 4.5 mm/s RMS.", "file_path": "/var/mock/Pump_SOP_Rev8.pdf", "is_quarantined": 0},
-        {"id": "DOC-004", "filename": "Pump_SOP_Rev7_NEW.pdf", "title": "Pump_SOP", "revision": "7", "status": "SUPERSEDED", "equipment_id": "Pump P-204", "department": "Engineering", "classification": "INTERNAL", "effective_date": "2023-01-01", "content": "Superseded SOP.", "file_path": "/var/mock/Pump_SOP_Rev7.pdf", "is_quarantined": 0},
-        {"id": "DOC-REPORT-P204-INSPECTION", "filename": "DOC-REPORT-P204-INSPECTION.txt", "title": "Inspection Report", "revision": "1", "status": "CURRENT_APPROVED", "equipment_id": "Pump P-204", "department": "Engineering", "classification": "INTERNAL", "effective_date": "2024-01-01", "content": "Drive End (DE) Bearing Horizontal Vibration: 3.12 mm/s RMS.", "file_path": "/var/mock/DOC-REPORT-P204-INSPECTION.txt", "is_quarantined": 0},
-        {"id": "DOC-HR-001", "filename": "HR_Salary_Bands_2024.pdf", "title": "HR Salary Bands", "revision": "1", "status": "CURRENT_APPROVED", "equipment_id": "ALL", "department": "HR", "classification": "CONFIDENTIAL", "effective_date": "2024-01-01", "content": "Confidential HR data.", "file_path": "/var/mock/HR_Salary_Bands_2024.pdf", "is_quarantined": 0}
-    ]
-    for doc in demo_docs:
-        try:
-            add_document(doc)
-        except Exception:
-            pass
-
-    for m in DEMO_MODEL_PROFILES:
-        caps = list(m["capabilities"])
-        if m["id"] == "AEGIS-DEMO-CODE" and "coding" not in caps:
-            caps.append("coding")
-        try:
-            execute_write("""
-                INSERT INTO models (id, name, version, architecture, parameters, quantization, capabilities, license, sha256, status, memory_req_mb, cpu_cores_req, gpu_vram_req_mb, qualification_score, shadow_agreement_score, benchmark_summary)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (m["id"], m["name"], m["version"], m["architecture"], m["parameters"], m["quantization"], json.dumps(caps), m["license"], m["sha256"], m["status"], m["memory_req_mb"], m["cpu_cores_req"], m["gpu_vram_req_mb"], m.get("qualification_score"), m.get("shadow_agreement_score"), json.dumps(m.get("benchmark_summary"))))
-        except Exception:
-            pass
-
-    if styled:
-        from rich.panel import Panel
-        from rich.table import Table
-        console.print()
-        console.print(Panel(f"[bold white]OPERATOR QUERY:[/] [bold #8b5cf6]{prompt}[/]\n"
-                            f"[dim]Security Scope: TEE Air-Gapped Enclave │ Model Suite: LangGraph Multi-Model │ Policy: ZERO-EGRESS[/]",
-                            title="[bold #8b5cf6]🛡 AEGIS SOVEREIGN AI BROKER — 8-STAGE CONTROL PLANE PIPELINE[/]",
-                            border_style="#8b5cf6"))
-        console.print("[dim]Executing verified pipeline: Capsule Verify ➔ Attestation ➔ Purpose Lease ➔ Compartment RAG ➔ Salted Cache ➔ LangGraph ➔ Tripwire ➔ Memory Hygiene ➔ Receipt...[/]\n")
-
-    runner = TaskRunner()
-    result = runner.run_pump_inspection_demo()
-
-    if styled:
-        badge_map = {
-            "SUCCESS": "[bold #50c878]✔ PASS[/]",
-            "INFO": "[dim #8b5cf6]ℹ INFO[/]",
-            "WARN": "[bold yellow]⚠ WARN[/]",
-            "SECURITY_ALERT": "[bold #dc143c]⛔ BLOCK[/]",
-            "BLOCKED": "[bold #dc143c]⛔ BLOCK[/]"
-        }
-        
-        table = Table(title="[bold #8b5cf6]Control Plane Security & Execution Log[/]", border_style="dim #8b5cf6", show_header=True, header_style="bold #8b5cf6")
-        table.add_column("Phase / Gate", style="bold white", width=25)
-        table.add_column("Status", width=12)
-        table.add_column("Evidence & Operational Telemetry", style="dim")
-        
-        for step in result.get("execution_log", []):
-            badge = badge_map.get(step.get("status"), f"[dim]{step.get('status')}[/]")
-            table.add_row(step.get("phase", ""), badge, step.get("message", ""))
-            
-        console.print(table)
-        console.print()
-        
-        # Summary Box
-        summary_table = Table.grid(padding=1)
-        summary_table.add_column(style="bold #8b5cf6")
-        summary_table.add_column(style="white")
-        summary_table.add_row("Task ID:", result.get("task_id", "N/A"))
-        summary_table.add_row("Execution Status:", f"[bold #50c878]{result.get('status')}[/]")
-        summary_table.add_row("Engaged Models:", ", ".join(result.get("models_engaged", [])))
-        summary_table.add_row("Authoritative SOP:", str(result.get("authoritative_sop", "N/A")))
-        summary_table.add_row("Superseded Docs Rejected:", str(result.get("superseded_documents_rejected_count", 0)))
-        summary_table.add_row("Malicious Contexts Blocked:", str(result.get("malicious_context_blocked_count", 0)))
-        claims = result.get("claims_summary", {})
-        summary_table.add_row("Tripwire Claims Blocked:", f"[bold #dc143c]{claims.get('blocked_from_output', 0)} claims blocked[/] ([verified]{claims.get('verified', 0)} verified[/], [info]{claims.get('calculated', 0)} calculated[/])")
-        
-        console.print(Panel(summary_table, title="[bold #50c878]✔ Sovereign Task Completed Successfully[/]", border_style="#50c878"))
-        
-        # Deliverable Preview
-        from aegis.storage.database import query_one
-        db_task = query_one("SELECT result_artifact, artifact_content FROM tasks WHERE id = ?", (result.get("task_id"),))
-        if db_task and db_task.get("artifact_content"):
-            console.print()
-            console.print(Panel(db_task["artifact_content"].strip(), title=f"[bold #8b5cf6]Artifact Deliverable: {db_task['result_artifact']}[/]", border_style="#8b5cf6"))
-    else:
-        for step in result.get("execution_log", []):
-            print(f"[{step['phase']}] ({step['status']}) - {step['message']}")
-        print(f"\nTask ID: {result.get('task_id')}")
-        print(f"Status: {result.get('status')}")
-
-    return {"status": "SUCCESS", "task_id": result.get("task_id"), "result": result}
+def run_sovereign_pipeline_ui(prompt="Review Pump P-204 vibration readings against engineering SOP", plain=False, client=None):
+    """Explicit fixture only; always use the authenticated, demo-gated API."""
+    if prompt != "Review Pump P-204 vibration readings against engineering SOP":
+        raise CLIError("The demo accepts its fixed fixture only. Use advisory-run for real source-backed requests.")
+    if client is None:
+        raise CLIError("The demo requires an authenticated local API client and enabled demo endpoints")
+    return client.call("/control/demo/run", "POST", {"scenario": "success"})
 
 
 def shell(client, parser, *, plain=False):
@@ -1104,7 +1046,7 @@ def shell(client, parser, *, plain=False):
         panel = Panel(table, title="[dim #8b5cf6]--- Aegis Console v0.15.1 <2026.10.02> - Sovereign AI Broker ---[/]", border_style="dim #8b5cf6")
         console.print(panel)
         console.print("[dim info]Welcome to the Aegis operator console. Type /demo, /help or any query.[/]")
-        console.print("[verified]System Status:[/] [dim]All telemetry locked. Zero-egress sandbox enforced.[/]")
+        console.print("[verified]System Status:[/] [dim]All telemetry locked. Use /doctor and /context to inspect active security controls.[/]")
     else:
         print(f"Aegis terminal | {client.url}")
         print("Use /help, /demo, /doctor, /context, /compose, /login <actor>, /exit. Plain text uses the selected lease.")
@@ -1129,8 +1071,8 @@ def shell(client, parser, *, plain=False):
                             )
                             
         aegis_commands = {
-            'demo': 'Run 8-Step Sovereign Task Runner pipeline (Capsule -> Attestation -> RAG -> Cache -> Tripwire -> Receipt)',
-            'pipeline': 'Execute Sovereign Verification workflow with live multi-model audit',
+            'demo': 'Run explicitly enabled deterministic control fixture (Capsule -> Attestation -> RAG -> Cache -> Tripwire -> Receipt)',
+            'pipeline': 'Run explicitly enabled deterministic control fixture',
             'help': 'Guided workflows or exact command arguments',
             'doctor': 'Read-only local diagnostics',
             'context': 'Inspect identity, selected lease and current incident authorization',
@@ -1177,18 +1119,18 @@ def shell(client, parser, *, plain=False):
         try:
             if has_pt:
                 cols = shutil.get_terminal_size().columns
-                lease_id = selected.get("id", "SOVEREIGN-AUTO")
-                model_name = selected.get("model", "AEGIS-DEMO-TEXT")
-                print(f" 🛡 {model_name} │ Lease: {lease_id} │ Network: AIR-GAPPED │ Clearance: INTERNAL")
+                lease_id = selected.get("id", "NOT_SELECTED")
+                model_name = selected.get("model", "NOT_SELECTED")
+                print(f" 🛡 {model_name} │ Lease: {lease_id} │ Transport: LOCAL_API │ Authorization: USE_CONTEXT")
                 print("─" * cols)
                 line = pt_session.prompt("❯ ", lexer=PygmentsLexer(MarkdownLexer)).strip()
                 print("─" * cols)
             elif styled:
                 from rich.prompt import Prompt
                 cols = shutil.get_terminal_size().columns
-                lease_id = selected.get("id", "SOVEREIGN-AUTO")
-                model_name = selected.get("model", "AEGIS-DEMO-TEXT")
-                console.print(f" 🛡 {model_name} │ Lease: {lease_id} │ Network: AIR-GAPPED │ Clearance: INTERNAL")
+                lease_id = selected.get("id", "NOT_SELECTED")
+                model_name = selected.get("model", "NOT_SELECTED")
+                console.print(f" 🛡 {model_name} │ Lease: {lease_id} │ Transport: LOCAL_API │ Authorization: USE_CONTEXT")
                 console.print("─" * cols)
                 line = Prompt.ask("[bold #8b5cf6]❯[/]")
                 console.print("─" * cols)
@@ -1209,20 +1151,9 @@ def shell(client, parser, *, plain=False):
                 result = compose(client)
             elif line in {"/demo", "/pipeline"} or line.startswith("/demo ") or line.startswith("/pipeline "):
                 prompt_arg = line.split(" ", 1)[1] if " " in line else "Review Pump P-204 vibration readings against engineering SOP"
-                result = run_sovereign_pipeline_ui(prompt_arg, plain=plain)
+                result = run_sovereign_pipeline_ui(prompt_arg, plain=plain, client=client)
             elif not line.startswith("/"):
-                selected = client.session.value.get("selected_lease", {})
-                if selected.get("id"):
-                    try:
-                        if styled:
-                            with console.status("[verified]Executing prompt...[/]", spinner="dots"):
-                                result = client.run(line)
-                        else:
-                            result = client.run(line)
-                    except Exception:
-                        result = run_sovereign_pipeline_ui(line, plain=plain)
-                else:
-                    result = run_sovereign_pipeline_ui(line, plain=plain)
+                result = client.run(line)
             else:
                 words = shlex.split(line[1:], posix=False)
                 words = [w[1:-1] if len(w) >= 2 and w[0] == w[-1] and w[0] in "'\"" else w for w in words]
@@ -1258,7 +1189,7 @@ def main(argv=None):
         if args.command in {"users", "backup"}:
             print_result(provision_user(args) if args.command == "users" else backup_command(args), json_output=args.json, plain=args.plain)
             return 0
-        if args.command in {"capacity", "manifest-hash", "bundle-verify", "help", "keys", "demo", "pipeline"}:
+        if args.command in {"capacity", "manifest-hash", "bundle-verify", "help", "keys"}:
             print_result(execute(args, None), json_output=args.json, plain=args.plain)
             return 0
         client = Client(args.url, args.timeout)

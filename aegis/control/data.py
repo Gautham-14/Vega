@@ -57,6 +57,10 @@ def source_current(value, skill, equipment):
     if skill not in value["permitted_skills"] or value["equipment"] not in {"ALL", equipment}:
         raise Denied("NOT_AUTHORIZED", "Skill or equipment is outside source authority", value["id"])
     for candidate in all_objects("source"):
+        if candidate["family"] == value["family"] and candidate["compartment"] == value["compartment"]:
+            candidate_body = {k: v for k, v in candidate.items() if k != "seal"}
+            if not verify_signature(candidate_body, "source", candidate.get("seal", "")):
+                raise Denied("SOURCE_INTEGRITY_FAILURE", "Source revision authority changed", candidate["id"])
         if (candidate["id"] != value["id"] and candidate["family"] == value["family"]
                 and candidate["compartment"] == value["compartment"] and candidate["status"] == "CURRENT_APPROVED"
                 and candidate["equipment"] in {equipment, "ALL"}
