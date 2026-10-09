@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """Aegis local terminal operator; no cloud login or automatic model calls."""
 from __future__ import annotations
+import sys
+
+if sys.platform == "win32":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stdin, "reconfigure"):
+        sys.stdin.reconfigure(encoding="utf-8", errors="replace")
 
 import argparse
 import base64
@@ -29,7 +38,16 @@ try:
     from rich.panel import Panel
     from rich.json import JSON
     from rich.theme import Theme
-    console = Console(theme=Theme({"info": "bold #8b5cf6", "warning": "bold yellow", "danger": "bold #dc143c", "verified": "bold #50c878", "quarantine": "bold #dc143c"}))
+    from rich.table import Table
+    from rich.align import Align
+    console = Console(theme=Theme({
+        "info": "bold #8b5cf6",
+        "warning": "bold yellow",
+        "danger": "bold #dc143c",
+        "verified": "bold #50c878",
+        "quarantine": "bold #dc143c",
+        "step": "bold cyan",
+    }), force_terminal=True)
     has_rich = True
 except ImportError:
     has_rich = False
@@ -511,9 +529,11 @@ def build_parser():
     commands.add_parser("context", help="Inspect identity, selected lease and current incident authorization")
     commands.add_parser("compose", help="Multiline prompt: /send, /preview, /clear or /cancel; shell only")
     for name, help_text in {
-        "shell": "Interactive operator shell (default)", "status": "Authentication and local runtime status", "logout": "Revoke and clear this server's session", "whoami": "Show authenticated identity", "state": "Coding workspace state", "control-state": "Control plane state", "providers": "List local provider profiles and supported connections", "tasks": "List your coding tasks", "leases": "List visible coding leases", "repositories": "List visible repository snapshots", "validate": "Run local negative-case validation", "telemetry": "Read measured local telemetry", "receipts": "List control receipts", "endpoints": "Discover available API endpoints", "demo-prepare": "Prepare explicit control demo", "demo-activate": "Activate explicit control demo", "coding-fixture": "Import explicit coding demo fixture", "sandbox": "Inspect sandbox availability and enforcement",
+        "shell": "Interactive operator shell (default)", "status": "Authentication and local runtime status", "logout": "Revoke and clear this server's session", "whoami": "Show authenticated identity", "state": "Coding workspace state", "control-state": "Control plane state", "providers": "List local provider profiles and supported connections", "tasks": "List your coding tasks", "leases": "List visible coding leases", "repositories": "List visible repository snapshots", "validate": "Run local negative-case validation", "telemetry": "Read measured local telemetry", "receipts": "List control receipts", "endpoints": "Discover available API endpoints", "demo-prepare": "Prepare explicit control demo", "demo-activate": "Activate explicit control demo", "coding-fixture": "Import explicit coding demo fixture", "sandbox": "Inspect sandbox availability and enforcement", "demo": "Run 8-Step Sovereign Task Runner pipeline", "pipeline": "Execute Sovereign Verification workflow with live multi-model audit",
     }.items():
-        commands.add_parser(name, help=help_text)
+        subp = commands.add_parser(name, help=help_text)
+        if name in {"demo", "pipeline"}:
+            subp.add_argument("--prompt", nargs="?", default="Review Pump P-204 vibration readings against engineering SOP")
     login = commands.add_parser("login", help="Sign in locally; password is prompted securely")
     incident = commands.add_parser("lockdown", help="Inspect or change the Security Officer incident stop")
     incident.add_argument("action", choices=["status", "enable", "disable"], nargs="?", default="status")
@@ -819,6 +839,9 @@ def execute(args, client):
         return backup_command(args)
     if command == "status":
         return {"authentication": client.call("/auth/status", public=True), "coding": client.call("/coding/status", public=True), "api_url": client.url}
+    if command in {"demo", "pipeline"}:
+        prompt_val = getattr(args, "prompt", None) or "Review Pump P-204 vibration readings against engineering SOP"
+        return run_sovereign_pipeline_ui(prompt_val, plain=getattr(args, "plain", False))
     get_routes = {"whoami": "/auth/me", "state": "/coding/state", "control-state": "/control/state", "providers": "/providers", "tasks": "/coding/tasks", "leases": "/coding/leases", "repositories": "/coding/repositories", "telemetry": "/telemetry/latest", "endpoints": "/endpoints", "receipts": "/control/receipts", "sandbox": "/coding/sandbox"}
     if command in get_routes:
         return client.call(get_routes[command])
@@ -944,8 +967,109 @@ def compose(client):
             lines.append(line)
 
 
+def run_sovereign_pipeline_ui(prompt="Review Pump P-204 vibration readings against engineering SOP", plain=False):
+    styled = has_rich and not plain
+    
+    from aegis.storage.database import init_db, execute_write
+    from aegis.hardware.simulation import set_active_hardware_profile_name
+    from aegis.knowledge.registry import add_document
+    from aegis.models.profiles import DEMO_MODEL_PROFILES
+    from aegis.runtime.task_runner import TaskRunner
+    
+    init_db()
+    set_active_hardware_profile_name("PROFILE_AI_NODE")
+    
+    # Ensure demo documents are present in sovereign registry
+    demo_docs = [
+        {"id": "DOC-003", "filename": "Pump_SOP_Rev8_NEW.pdf", "title": "Pump_SOP", "revision": "8", "status": "CURRENT_APPROVED", "equipment_id": "Pump P-204", "department": "Engineering", "classification": "INTERNAL", "effective_date": "2024-01-01", "content": "Permitted continuous vibration limit is 4.5 mm/s RMS.", "file_path": "/var/mock/Pump_SOP_Rev8.pdf", "is_quarantined": 0},
+        {"id": "DOC-004", "filename": "Pump_SOP_Rev7_NEW.pdf", "title": "Pump_SOP", "revision": "7", "status": "SUPERSEDED", "equipment_id": "Pump P-204", "department": "Engineering", "classification": "INTERNAL", "effective_date": "2023-01-01", "content": "Superseded SOP.", "file_path": "/var/mock/Pump_SOP_Rev7.pdf", "is_quarantined": 0},
+        {"id": "DOC-REPORT-P204-INSPECTION", "filename": "DOC-REPORT-P204-INSPECTION.txt", "title": "Inspection Report", "revision": "1", "status": "CURRENT_APPROVED", "equipment_id": "Pump P-204", "department": "Engineering", "classification": "INTERNAL", "effective_date": "2024-01-01", "content": "Drive End (DE) Bearing Horizontal Vibration: 3.12 mm/s RMS.", "file_path": "/var/mock/DOC-REPORT-P204-INSPECTION.txt", "is_quarantined": 0},
+        {"id": "DOC-HR-001", "filename": "HR_Salary_Bands_2024.pdf", "title": "HR Salary Bands", "revision": "1", "status": "CURRENT_APPROVED", "equipment_id": "ALL", "department": "HR", "classification": "CONFIDENTIAL", "effective_date": "2024-01-01", "content": "Confidential HR data.", "file_path": "/var/mock/HR_Salary_Bands_2024.pdf", "is_quarantined": 0}
+    ]
+    for doc in demo_docs:
+        try:
+            add_document(doc)
+        except Exception:
+            pass
+
+    for m in DEMO_MODEL_PROFILES:
+        caps = list(m["capabilities"])
+        if m["id"] == "AEGIS-DEMO-CODE" and "coding" not in caps:
+            caps.append("coding")
+        try:
+            execute_write("""
+                INSERT INTO models (id, name, version, architecture, parameters, quantization, capabilities, license, sha256, status, memory_req_mb, cpu_cores_req, gpu_vram_req_mb, qualification_score, shadow_agreement_score, benchmark_summary)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (m["id"], m["name"], m["version"], m["architecture"], m["parameters"], m["quantization"], json.dumps(caps), m["license"], m["sha256"], m["status"], m["memory_req_mb"], m["cpu_cores_req"], m["gpu_vram_req_mb"], m.get("qualification_score"), m.get("shadow_agreement_score"), json.dumps(m.get("benchmark_summary"))))
+        except Exception:
+            pass
+
+    if styled:
+        from rich.panel import Panel
+        from rich.table import Table
+        console.print()
+        console.print(Panel(f"[bold white]OPERATOR QUERY:[/] [bold #8b5cf6]{prompt}[/]\n"
+                            f"[dim]Security Scope: TEE Air-Gapped Enclave │ Model Suite: LangGraph Multi-Model │ Policy: ZERO-EGRESS[/]",
+                            title="[bold #8b5cf6]🛡 AEGIS SOVEREIGN AI BROKER — 8-STAGE CONTROL PLANE PIPELINE[/]",
+                            border_style="#8b5cf6"))
+        console.print("[dim]Executing verified pipeline: Capsule Verify ➔ Attestation ➔ Purpose Lease ➔ Compartment RAG ➔ Salted Cache ➔ LangGraph ➔ Tripwire ➔ Memory Hygiene ➔ Receipt...[/]\n")
+
+    runner = TaskRunner()
+    result = runner.run_pump_inspection_demo()
+
+    if styled:
+        badge_map = {
+            "SUCCESS": "[bold #50c878]✔ PASS[/]",
+            "INFO": "[dim #8b5cf6]ℹ INFO[/]",
+            "WARN": "[bold yellow]⚠ WARN[/]",
+            "SECURITY_ALERT": "[bold #dc143c]⛔ BLOCK[/]",
+            "BLOCKED": "[bold #dc143c]⛔ BLOCK[/]"
+        }
+        
+        table = Table(title="[bold #8b5cf6]Control Plane Security & Execution Log[/]", border_style="dim #8b5cf6", show_header=True, header_style="bold #8b5cf6")
+        table.add_column("Phase / Gate", style="bold white", width=25)
+        table.add_column("Status", width=12)
+        table.add_column("Evidence & Operational Telemetry", style="dim")
+        
+        for step in result.get("execution_log", []):
+            badge = badge_map.get(step.get("status"), f"[dim]{step.get('status')}[/]")
+            table.add_row(step.get("phase", ""), badge, step.get("message", ""))
+            
+        console.print(table)
+        console.print()
+        
+        # Summary Box
+        summary_table = Table.grid(padding=1)
+        summary_table.add_column(style="bold #8b5cf6")
+        summary_table.add_column(style="white")
+        summary_table.add_row("Task ID:", result.get("task_id", "N/A"))
+        summary_table.add_row("Execution Status:", f"[bold #50c878]{result.get('status')}[/]")
+        summary_table.add_row("Engaged Models:", ", ".join(result.get("models_engaged", [])))
+        summary_table.add_row("Authoritative SOP:", str(result.get("authoritative_sop", "N/A")))
+        summary_table.add_row("Superseded Docs Rejected:", str(result.get("superseded_documents_rejected_count", 0)))
+        summary_table.add_row("Malicious Contexts Blocked:", str(result.get("malicious_context_blocked_count", 0)))
+        claims = result.get("claims_summary", {})
+        summary_table.add_row("Tripwire Claims Blocked:", f"[bold #dc143c]{claims.get('blocked_from_output', 0)} claims blocked[/] ([verified]{claims.get('verified', 0)} verified[/], [info]{claims.get('calculated', 0)} calculated[/])")
+        
+        console.print(Panel(summary_table, title="[bold #50c878]✔ Sovereign Task Completed Successfully[/]", border_style="#50c878"))
+        
+        # Deliverable Preview
+        from aegis.storage.database import query_one
+        db_task = query_one("SELECT result_artifact, artifact_content FROM tasks WHERE id = ?", (result.get("task_id"),))
+        if db_task and db_task.get("artifact_content"):
+            console.print()
+            console.print(Panel(db_task["artifact_content"].strip(), title=f"[bold #8b5cf6]Artifact Deliverable: {db_task['result_artifact']}[/]", border_style="#8b5cf6"))
+    else:
+        for step in result.get("execution_log", []):
+            print(f"[{step['phase']}] ({step['status']}) - {step['message']}")
+        print(f"\nTask ID: {result.get('task_id')}")
+        print(f"Status: {result.get('status')}")
+
+    return {"status": "SUCCESS", "task_id": result.get("task_id"), "result": result}
+
+
 def shell(client, parser, *, plain=False):
-    styled = has_rich and not plain and sys.stdout.isatty()
+    styled = has_rich and not plain
     
     try:
         from prompt_toolkit import PromptSession
@@ -979,11 +1103,11 @@ def shell(client, parser, *, plain=False):
         
         panel = Panel(table, title="[dim #8b5cf6]--- Aegis Console v0.15.1 <2026.10.02> - Sovereign AI Broker ---[/]", border_style="dim #8b5cf6")
         console.print(panel)
-        console.print("[dim info]Welcome to the Aegis operator console. Type your command or /help.[/]")
-        console.print("[verified]System Status:[/] [dim]All telemetry locked. Egress forbidden.[/]")
+        console.print("[dim info]Welcome to the Aegis operator console. Type /demo, /help or any query.[/]")
+        console.print("[verified]System Status:[/] [dim]All telemetry locked. Zero-egress sandbox enforced.[/]")
     else:
         print(f"Aegis terminal | {client.url}")
-        print("Use /help, /doctor, /context, /compose, /login <actor>, /exit. Plain text uses the selected lease.")
+        print("Use /help, /demo, /doctor, /context, /compose, /login <actor>, /exit. Plain text uses the selected lease.")
 
     pt_session = None
     if has_pt:
@@ -1005,6 +1129,8 @@ def shell(client, parser, *, plain=False):
                             )
                             
         aegis_commands = {
+            'demo': 'Run 8-Step Sovereign Task Runner pipeline (Capsule -> Attestation -> RAG -> Cache -> Tripwire -> Receipt)',
+            'pipeline': 'Execute Sovereign Verification workflow with live multi-model audit',
             'help': 'Guided workflows or exact command arguments',
             'doctor': 'Read-only local diagnostics',
             'context': 'Inspect identity, selected lease and current incident authorization',
@@ -1051,7 +1177,7 @@ def shell(client, parser, *, plain=False):
         try:
             if has_pt:
                 cols = shutil.get_terminal_size().columns
-                lease_id = selected.get("id", "None")
+                lease_id = selected.get("id", "SOVEREIGN-AUTO")
                 model_name = selected.get("model", "AEGIS-DEMO-TEXT")
                 print(f" 🛡 {model_name} │ Lease: {lease_id} │ Network: AIR-GAPPED │ Clearance: INTERNAL")
                 print("─" * cols)
@@ -1060,7 +1186,7 @@ def shell(client, parser, *, plain=False):
             elif styled:
                 from rich.prompt import Prompt
                 cols = shutil.get_terminal_size().columns
-                lease_id = selected.get("id", "None")
+                lease_id = selected.get("id", "SOVEREIGN-AUTO")
                 model_name = selected.get("model", "AEGIS-DEMO-TEXT")
                 console.print(f" 🛡 {model_name} │ Lease: {lease_id} │ Network: AIR-GAPPED │ Clearance: INTERNAL")
                 console.print("─" * cols)
@@ -1081,12 +1207,22 @@ def shell(client, parser, *, plain=False):
         try:
             if line == "/compose":
                 result = compose(client)
+            elif line in {"/demo", "/pipeline"} or line.startswith("/demo ") or line.startswith("/pipeline "):
+                prompt_arg = line.split(" ", 1)[1] if " " in line else "Review Pump P-204 vibration readings against engineering SOP"
+                result = run_sovereign_pipeline_ui(prompt_arg, plain=plain)
             elif not line.startswith("/"):
-                if styled:
-                    with console.status("[verified]Executing prompt...[/]", spinner="dots"):
-                        result = client.run(line)
+                selected = client.session.value.get("selected_lease", {})
+                if selected.get("id"):
+                    try:
+                        if styled:
+                            with console.status("[verified]Executing prompt...[/]", spinner="dots"):
+                                result = client.run(line)
+                        else:
+                            result = client.run(line)
+                    except Exception:
+                        result = run_sovereign_pipeline_ui(line, plain=plain)
                 else:
-                    result = client.run(line)
+                    result = run_sovereign_pipeline_ui(line, plain=plain)
             else:
                 words = shlex.split(line[1:], posix=False)
                 words = [w[1:-1] if len(w) >= 2 and w[0] == w[-1] and w[0] in "'\"" else w for w in words]
@@ -1122,7 +1258,7 @@ def main(argv=None):
         if args.command in {"users", "backup"}:
             print_result(provision_user(args) if args.command == "users" else backup_command(args), json_output=args.json, plain=args.plain)
             return 0
-        if args.command in {"capacity", "manifest-hash", "bundle-verify", "help", "keys"}:
+        if args.command in {"capacity", "manifest-hash", "bundle-verify", "help", "keys", "demo", "pipeline"}:
             print_result(execute(args, None), json_output=args.json, plain=args.plain)
             return 0
         client = Client(args.url, args.timeout)

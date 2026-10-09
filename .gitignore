@@ -44,3 +44,4 @@ dist/
 *.pdf
 .audit-tmp/
 backups/
+scratch/

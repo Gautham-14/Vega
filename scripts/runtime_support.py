@@ -16,7 +16,8 @@ def environment_python(root, platform_name=None):
 def offline_environment():
     env = {key: value for key, value in os.environ.items()
            if not key.upper().startswith(("PYTHON", "PIP_"))}
-    env.update({"PIP_NO_INDEX": "1", "PIP_CONFIG_FILE": os.devnull,
+    env.update({"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1",
+                "PIP_NO_INDEX": "1", "PIP_CONFIG_FILE": os.devnull,
                 "PIP_DISABLE_PIP_VERSION_CHECK": "1", "HF_HUB_OFFLINE": "1",
                 "TRANSFORMERS_OFFLINE": "1", "HF_DATASETS_OFFLINE": "1",
                 "HF_HUB_DISABLE_TELEMETRY": "1", "DO_NOT_TRACK": "1",

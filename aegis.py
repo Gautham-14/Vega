@@ -6,6 +6,14 @@ from pathlib import Path
 import subprocess
 import sys
 
+if sys.platform == "win32":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stdin, "reconfigure"):
+        sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+
 from scripts.runtime_support import environment_python, offline_environment
 
 ROOT = Path(__file__).resolve().parent
@@ -49,7 +57,16 @@ def main(argv=None):
         if not python.is_file():
             raise ValueError("First-time setup is needed. Run this launcher with 'setup' and supply your reviewed local wheelhouse. See QUICKSTART.md.")
         if args.command == "cli":
-            command = [str(python), "-I", str(ROOT / "scripts" / "run_cli.py"), *args.arguments]
+            if not args.arguments or args.arguments == ["shell"]:
+                import socket
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    server_running = (s.connect_ex(("127.0.0.1", 8000)) == 0)
+                if not server_running:
+                    command = [str(python), "-I", str(ROOT / "scripts" / "start_offline.py"), "--port", "8000"]
+                else:
+                    command = [str(python), "-I", str(ROOT / "scripts" / "run_cli.py"), *args.arguments]
+            else:
+                command = [str(python), "-I", str(ROOT / "scripts" / "run_cli.py"), *args.arguments]
         else:
             port = getattr(args, "port", 8000)
             if not 1 <= port <= 65535:

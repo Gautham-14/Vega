@@ -24,6 +24,19 @@ class ContextFirewall:
         matched_rules = []
         highest_severity = "NONE"
 
+        # AI STACK DEPTH: OT Boundary — IEC 62443 Data Diode
+        # Ensure traffic originates only from read-only zones (simulated via regex for now)
+        if "SCADA_WRITE" in text or "PLC_COMMAND" in text:
+            matched_rules.append({
+                "rule_id": "IEC-62443-DIODE-BLOCK",
+                "rule_name": "OT Boundary Violation: Data Diode Write Attempt",
+                "severity": "CRITICAL",
+                "description": "Blocked active WRITE attempt across OT boundary data diode.",
+                "matched_snippets": []
+            })
+            highest_severity = "CRITICAL"
+
+
         # 0. Client-Side Data Loss Prevention (DLP)
         import re
         dlp_patterns = {
