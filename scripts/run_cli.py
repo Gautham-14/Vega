@@ -1,6 +1,7 @@
 """Launch the CLI with an explicit source path from an isolated interpreter."""
-from pathlib import Path
+
 import sys
+from pathlib import Path
 
 if sys.platform == "win32":
     if hasattr(sys.stdout, "reconfigure"):
@@ -20,6 +21,7 @@ def main():
     try:
         require_environment(ROOT)
         from aegis.cli import main as cli_main
+
         return cli_main()
     except (RuntimeError, ImportError) as error:
         print(f"Aegis CLI: {error}", file=sys.stderr)

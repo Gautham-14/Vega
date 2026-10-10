@@ -1,0 +1,47 @@
+[Unit]
+Description=Aegis restricted guest virtio API bridge
+Requires=aegis-api.service
+After=aegis-api.service
+JoinsNamespaceOf=aegis-api.service
+
+[Service]
+Type=simple
+User=aegis
+Group=aegis
+SupplementaryGroups=aegis-custody
+WorkingDirectory=/opt/aegis
+EnvironmentFile=/etc/aegis/runtime.env
+Environment=AEGIS_SECURITY_PROFILE=production
+Environment=AEGIS_DATA_DIR=/var/lib/aegis
+Environment=AEGIS_KEY_BROKER_SOCKET=/run/aegis-key/service.sock
+Environment=AEGIS_AUDIT_WITNESS_SOCKET=/run/aegis-witness/service.sock
+Environment=AEGIS_ATTESTOR_SOCKET=/run/aegis-attestor/service.sock
+ExecStart=/opt/aegis/.venv/bin/python -m aegis.vm.guest
+PrivateNetwork=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+DevicePolicy=closed
+DeviceAllow=/dev/virtio-ports/org.aegis.api rw
+ReadWritePaths=/var/lib/aegis
+InaccessiblePaths=/var/lib/aegis-key /var/lib/aegis-witness -/etc/aegis/attestor.private.pem -/var/run/docker.sock
+LimitCORE=0
+MemoryMax=256M
+TasksMax=16
+KillMode=control-group
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

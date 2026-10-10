@@ -4,6 +4,7 @@ Lexical BM25 is not semantic retrieval. Optional grammars are installed Python
 packages, never downloaded. Embeddings require a pinned local safetensors model;
 model and vector objects live only for this search, with no cross-task index.
 """
+
 import ast
 import hashlib
 import importlib
@@ -12,17 +13,16 @@ import importlib.util
 import json
 import math
 import os
-from pathlib import Path
 import re
 import stat
+from pathlib import Path
 
-from aegis.security.private_files import no_links
-
-from aegis.control import store
-from aegis.storage.paths import safe_filename
-from aegis.coding.tokenizer import get_tokens
 from aegis.coding.embedding import MatryoshkaEmbeddingSystem
+from aegis.coding.tokenizer import get_tokens
+from aegis.control import store
 from aegis.knowledge import ranking
+from aegis.security.private_files import no_links
+from aegis.storage.paths import safe_filename
 
 MAX_FILES = 64
 MAX_BYTES = 512_000
@@ -41,11 +41,26 @@ GRAMMARS = {
     ".rs": ("rust", "tree_sitter_rust", "language"),
     ".go": ("go", "tree_sitter_go", "language"),
 }
-SYMBOL_NODES = {"function_declaration", "function_definition", "class_declaration", "class_definition",
-                "method_definition", "method_declaration", "function_item", "struct_item", "enum_item",
-                "trait_item", "interface_declaration", "type_alias_declaration", "type_spec"}
-SAFE_MODULES = {"sentence_transformers.models.Transformer", "sentence_transformers.models.Pooling",
-                "sentence_transformers.models.Normalize"}
+SYMBOL_NODES = {
+    "function_declaration",
+    "function_definition",
+    "class_declaration",
+    "class_definition",
+    "method_definition",
+    "method_declaration",
+    "function_item",
+    "struct_item",
+    "enum_item",
+    "trait_item",
+    "interface_declaration",
+    "type_alias_declaration",
+    "type_spec",
+}
+SAFE_MODULES = {
+    "sentence_transformers.models.Transformer",
+    "sentence_transformers.models.Pooling",
+    "sentence_transformers.models.Normalize",
+}
 
 
 def installed(module):
@@ -90,6 +105,7 @@ def model_digest(directory):
     """
     root = _model_root(directory)
     entries, total, visited = [], 0, 0
+
     def unreadable(error):
         raise ValueError("Model inventory could not be completely read") from error
 
@@ -101,15 +117,27 @@ def model_digest(directory):
             path = Path(parent) / name
             no_links(path)
             details = path.lstat()
-            if (path.is_symlink() or getattr(path, "is_junction", lambda: False)()
-                    or getattr(details, "st_file_attributes", 0) & 0x400
-                    or not path.resolve().is_relative_to(root)):
+            if (
+                path.is_symlink()
+                or getattr(path, "is_junction", lambda: False)()
+                or getattr(details, "st_file_attributes", 0) & 0x400
+                or not path.resolve().is_relative_to(root)
+            ):
                 raise ValueError("Model links are not permitted")
             if stat.S_ISDIR(details.st_mode):
                 continue
             if not stat.S_ISREG(details.st_mode):
                 raise ValueError("Model special files are not permitted")
-            if path.suffix.lower() in {".py", ".pyc", ".pkl", ".pickle", ".bin", ".pt", ".pth", ".ckpt"}:
+            if path.suffix.lower() in {
+                ".py",
+                ".pyc",
+                ".pkl",
+                ".pickle",
+                ".bin",
+                ".pt",
+                ".pth",
+                ".ckpt",
+            }:
                 raise ValueError("Only data and safetensors weights are permitted")
             total += details.st_size
             if total > MAX_MODEL_BYTES or len(entries) >= 256:
@@ -122,9 +150,19 @@ def model_digest(directory):
                         raise ValueError("Model changed while hashing")
                     hashed.update(block)
             after = path.stat()
-            if size != details.st_size or after.st_mtime_ns != details.st_mtime_ns or after.st_size != details.st_size:
+            if (
+                size != details.st_size
+                or after.st_mtime_ns != details.st_mtime_ns
+                or after.st_size != details.st_size
+            ):
                 raise ValueError("Model changed while hashing")
-            entries.append({"path": path.relative_to(root).as_posix(), "bytes": size, "sha256": hashed.hexdigest()})
+            entries.append(
+                {
+                    "path": path.relative_to(root).as_posix(),
+                    "bytes": size,
+                    "sha256": hashed.hexdigest(),
+                }
+            )
     if not entries or not any(item["path"].endswith(".safetensors") for item in entries):
         raise ValueError("Local safetensors weights are required")
     return store.digest(sorted(entries, key=lambda item: item["path"]))
@@ -166,24 +204,41 @@ def _validate_model_layout(root):
 def _embedding_configuration():
     directory = os.environ.get("AEGIS_EMBEDDING_MODEL_DIR", "")
     expected = os.environ.get("AEGIS_EMBEDDING_DIGEST", "")
-    value = {"requested": bool(directory or expected), "enabled": False, "status": "NOT_CONFIGURED",
-             "model_digest": expected if re.fullmatch(r"[a-f0-9]{64}", expected) else None,
-             "model_location_hash": hashlib.sha256(directory.encode()).hexdigest() if directory else None,
-             "package_version": version("sentence-transformers"), "device": "cpu",
-             "local_files_only": True, "trust_remote_code": False, "persistent_vectors": False}
+    value = {
+        "requested": bool(directory or expected),
+        "enabled": False,
+        "status": "NOT_CONFIGURED",
+        "model_digest": expected if re.fullmatch(r"[a-f0-9]{64}", expected) else None,
+        "model_location_hash": hashlib.sha256(directory.encode()).hexdigest()
+        if directory
+        else None,
+        "package_version": version("sentence-transformers"),
+        "device": "cpu",
+        "local_files_only": True,
+        "trust_remote_code": False,
+        "persistent_vectors": False,
+    }
     raw_dimensions = os.environ.get("AEGIS_EMBEDDING_MRL_DIMENSIONS", "")
     raw_coarse = os.environ.get("AEGIS_EMBEDDING_COARSE_DIMENSION", "")
     try:
-        dimensions = tuple(int(item) for item in raw_dimensions.split(",")) if raw_dimensions else ()
+        dimensions = (
+            tuple(int(item) for item in raw_dimensions.split(",")) if raw_dimensions else ()
+        )
         coarse = int(raw_coarse) if raw_coarse else None
-        if (any(not 1 <= item <= 4096 for item in dimensions) or len(set(dimensions)) != len(dimensions)
-                or (coarse is not None and coarse not in dimensions)):
+        if (
+            any(not 1 <= item <= 4096 for item in dimensions)
+            or len(set(dimensions)) != len(dimensions)
+            or (coarse is not None and coarse not in dimensions)
+        ):
             raise ValueError
     except ValueError:
         value.update(requested=True, status="INVALID_MRL_CONFIGURATION")
         return value
-    value.update(reviewed_mrl_dimensions=list(dimensions), coarse_dimension=coarse,
-                 dense_backend="EXACT_MRL_COARSE_NATIVE_RERANK" if coarse else "EXACT_NATIVE_COSINE")
+    value.update(
+        reviewed_mrl_dimensions=list(dimensions),
+        coarse_dimension=coarse,
+        dense_backend="EXACT_MRL_COARSE_NATIVE_RERANK" if coarse else "EXACT_NATIVE_COSINE",
+    )
     if (raw_dimensions or raw_coarse) and not value["requested"]:
         value.update(requested=True, status="INCOMPLETE_CONFIGURATION")
         return value
@@ -213,15 +268,29 @@ def configuration():
     structural = {"python": {"backend": "PYTHON_AST"}}
     for language, module, _ in GRAMMARS.values():
         available = grammar_runtime and installed(module)
-        structural[language] = {"backend": "TREE_SITTER" if available else "UNAVAILABLE",
-                                "package_version": version(module.replace("_", "-")) if available else None}
+        structural[language] = {
+            "backend": "TREE_SITTER" if available else "UNAVAILABLE",
+            "package_version": version(module.replace("_", "-")) if available else None,
+        }
     embedding = _embedding_configuration()
-    return {"provider": "local-hybrid-v2", "lexical": "BM25_WITH_EXACT_MATCH", "structural": structural,
-            "tree_sitter_version": version("tree-sitter") if grammar_runtime else None,
-            "semantic_enabled": embedding["enabled"], "semantic_status": embedding["status"], "embedding": embedding,
-            "automatic_downloads": False, "cache_scope": "SEARCH_CALL_MEMORY_ONLY",
-            "limits": {"files": MAX_FILES, "bytes": MAX_BYTES, "chunks": MAX_CHUNKS, "chunk_characters": CHUNK_CHARS},
-            "scope": "Caller supplies authorized sanitized files. Local model files are hashed; host memory isolation is not attested."}
+    return {
+        "provider": "local-hybrid-v2",
+        "lexical": "BM25_WITH_EXACT_MATCH",
+        "structural": structural,
+        "tree_sitter_version": version("tree-sitter") if grammar_runtime else None,
+        "semantic_enabled": embedding["enabled"],
+        "semantic_status": embedding["status"],
+        "embedding": embedding,
+        "automatic_downloads": False,
+        "cache_scope": "SEARCH_CALL_MEMORY_ONLY",
+        "limits": {
+            "files": MAX_FILES,
+            "bytes": MAX_BYTES,
+            "chunks": MAX_CHUNKS,
+            "chunk_characters": CHUNK_CHARS,
+        },
+        "scope": "Caller supplies authorized sanitized files. Local model files are hashed; host memory isolation is not attested.",
+    }
 
 
 def _validate_snapshot(files, query):
@@ -231,14 +300,21 @@ def _validate_snapshot(files, query):
         raise ValueError("Search requires a bounded authorized snapshot")
     total, seen = 0, set()
     for path, content in files.items():
-        if not isinstance(path, str) or len(path) > 240 or "\\" in path or not isinstance(content, str):
+        if (
+            not isinstance(path, str)
+            or len(path) > 240
+            or "\\" in path
+            or not isinstance(content, str)
+        ):
             raise ValueError("Search requires relative UTF-8 text paths")
         for part in path.split("/"):
             safe_filename(part)
             if part.lower() in {".git", ".ssh", ".aws", ".env"} or part.lower().startswith(".env."):
                 raise ValueError("Private configuration paths are excluded from retrieval")
         key = path.casefold()
-        if key in seen or any(key.startswith(other + "/") or other.startswith(key + "/") for other in seen):
+        if key in seen or any(
+            key.startswith(other + "/") or other.startswith(key + "/") for other in seen
+        ):
             raise ValueError("Search paths conflict")
         seen.add(key)
         size = len(content.encode())
@@ -256,8 +332,11 @@ def symbols(path, content):
     if path.lower().endswith(".py"):
         try:
             parsed = ast.parse(content)
-            found = [{"name": node.name, "line": node.lineno, "kind": type(node).__name__}
-                     for node in ast.walk(parsed) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+            found = [
+                {"name": node.name, "line": node.lineno, "kind": type(node).__name__}
+                for node in ast.walk(parsed)
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            ]
             return found[:1024], "PYTHON_AST"
         except (SyntaxError, ValueError, RecursionError):
             return [], "SYNTAX_ERROR"
@@ -279,12 +358,20 @@ def symbols(path, content):
             eligible = node.type in SYMBOL_NODES
             if node.type == "variable_declarator":
                 value = node.child_by_field_name("value")
-                eligible = value is not None and value.type in {"arrow_function", "function_expression"}
+                eligible = value is not None and value.type in {
+                    "arrow_function",
+                    "function_expression",
+                }
             if eligible:
                 name = node.child_by_field_name("name")
                 if name is not None:
-                    found.append({"name": source[name.start_byte:name.end_byte].decode("utf-8")[:160],
-                                  "line": node.start_point[0] + 1, "kind": node.type})
+                    found.append(
+                        {
+                            "name": source[name.start_byte : name.end_byte].decode("utf-8")[:160],
+                            "line": node.start_point[0] + 1,
+                            "kind": node.type,
+                        }
+                    )
             stack.extend(reversed(node.named_children))
         return found, "TREE_SITTER" if not stack else "TREE_SITTER_LIMIT_REACHED"
     except (ImportError, OSError, ValueError, TypeError, AttributeError, RecursionError):
@@ -296,7 +383,7 @@ def _chunks(files):
     for path, content in sorted(files.items()):
         line = 1
         for start in range(0, len(content), CHUNK_CHARS):
-            chunk = content[start:start + CHUNK_CHARS]
+            chunk = content[start : start + CHUNK_CHARS]
             result.append({"path": path, "line": line, "text": chunk})
             line += chunk.count("\n")
     if len(result) > MAX_CHUNKS:
@@ -310,34 +397,53 @@ def _semantic_scores(files, query, expected):
         if not chunks:
             return {}
         if _embedding_configuration() != expected:
-            raise store.Denied("EMBEDDING_CONFIGURATION_CHANGED", "Pinned embedding configuration changed")
+            raise store.Denied(
+                "EMBEDDING_CONFIGURATION_CHANGED", "Pinned embedding configuration changed"
+            )
         root = _model_root(os.environ.get("AEGIS_EMBEDDING_MODEL_DIR", ""))
-        system = MatryoshkaEmbeddingSystem(str(root), expected["model_digest"],
-                                         matryoshka_dimensions=expected.get("reviewed_mrl_dimensions", ()))
+        system = MatryoshkaEmbeddingSystem(
+            str(root),
+            expected["model_digest"],
+            matryoshka_dimensions=expected.get("reviewed_mrl_dimensions", ()),
+        )
         texts = [query] + [item["text"] for item in chunks]
         # Preserve the trained output dimension by default.
         rows = system.encode(texts, dimensions=None)
         if len(rows) != len(texts) or not rows or not 1 <= len(rows[0]) <= 4096:
             raise ValueError("Invalid embedding output dimensions")
         dimensions = len(rows[0])
-        if any(len(row) != dimensions or any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in row) for row in rows):
+        if any(
+            len(row) != dimensions
+            or any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in row)
+            for row in rows
+        ):
             raise ValueError("Invalid embedding output")
         scores = {}
-        ranked = ranking.dense_rank(rows[0], rows[1:], coarse_dimension=expected.get("coarse_dimension"),
-                                   reviewed_dimensions=expected.get("reviewed_mrl_dimensions", ()))
+        ranked = ranking.dense_rank(
+            rows[0],
+            rows[1:],
+            coarse_dimension=expected.get("coarse_dimension"),
+            reviewed_dimensions=expected.get("reviewed_mrl_dimensions", ()),
+        )
         for index, score in ranked:
             chunk = chunks[index]
             score = min(1.0, max(0.0, score))
             if score > scores.get(chunk["path"], (0, 1))[0]:
                 scores[chunk["path"]] = (score, chunk["line"])
         if _embedding_configuration() != expected:
-            raise store.Denied("EMBEDDING_CONFIGURATION_CHANGED", "Pinned embedding configuration changed during search")
+            raise store.Denied(
+                "EMBEDDING_CONFIGURATION_CHANGED",
+                "Pinned embedding configuration changed during search",
+            )
         return scores
     except store.Denied:
         raise
     except Exception:
         # Do not echo source text, query, host paths or dependency exception text.
-        raise store.Denied("EMBEDDING_UNAVAILABLE", "Pinned local embeddings could not run; no remote fallback was attempted") from None
+        raise store.Denied(
+            "EMBEDDING_UNAVAILABLE",
+            "Pinned local embeddings could not run; no remote fallback was attempted",
+        ) from None
     finally:
         texts.clear()
         chunks.clear()
@@ -349,16 +455,28 @@ def search(files, query):
     _validate_snapshot(files, query)
     profile = _embedding_configuration()
     if profile["requested"] and not profile["enabled"]:
-        raise store.Denied("EMBEDDING_UNAVAILABLE", "Configured local embedding model is unavailable: " + profile["status"])
+        raise store.Denied(
+            "EMBEDDING_UNAVAILABLE",
+            "Configured local embedding model is unavailable: " + profile["status"],
+        )
     terms = set(_tokens(query))
-    lexical_scores = dict(zip(files, ranking.bm25([_tokens(path + "\n" + content) for path, content in files.items()], terms)))
+    lexical_scores = dict(
+        zip(
+            files,
+            ranking.bm25(
+                [_tokens(path + "\n" + content) for path, content in files.items()], terms
+            ),
+        )
+    )
     semantic = _semantic_scores(files, query, profile) if profile["enabled"] else {}
     result = []
     for path, content in files.items():
         discovered, structure = symbols(path, content)
         structural = [symbol for symbol in discovered if symbol["name"].casefold() in terms]
         lines = content.splitlines()
-        exact = [index for index, line in enumerate(lines, 1) if query.casefold() in line.casefold()]
+        exact = [
+            index for index, line in enumerate(lines, 1) if query.casefold() in line.casefold()
+        ]
         lexical = lexical_scores[path]
         semantic_score, semantic_line = semantic.get(path, (0, 1))
 
@@ -374,13 +492,30 @@ def search(files, query):
         elif semantic_score > lexical:
             line = semantic_line
         else:
-            line = max(enumerate(lines, 1), key=lambda entry: len(terms.intersection(_tokens(entry[1]))),
-                       default=(1, ""))[0]
-        result.append({"path": path, "line": line, "score": round(score, 6), "symbols": structural[:20],
-                       "excerpt": "\n".join(lines[max(0, line - 2):line + 5])[:2500],
-                       "trust": "UNTRUSTED_CONTENT", "instructions_authoritative": False,
-                       "retrieval": {"lexical": "BM25_WITH_EXACT_MATCH", "structure": structure,
-                                     "semantic": profile["enabled"], "semantic_score": round(semantic_score, 6),
-                                     "dense_backend": profile.get("dense_backend", "EXACT_NATIVE_COSINE") if profile["enabled"] else "NOT_CONFIGURED",
-                                     "late_interaction": "NOT_CONFIGURED"}})
+            line = max(
+                enumerate(lines, 1),
+                key=lambda entry: len(terms.intersection(_tokens(entry[1]))),
+                default=(1, ""),
+            )[0]
+        result.append(
+            {
+                "path": path,
+                "line": line,
+                "score": round(score, 6),
+                "symbols": structural[:20],
+                "excerpt": "\n".join(lines[max(0, line - 2) : line + 5])[:2500],
+                "trust": "UNTRUSTED_CONTENT",
+                "instructions_authoritative": False,
+                "retrieval": {
+                    "lexical": "BM25_WITH_EXACT_MATCH",
+                    "structure": structure,
+                    "semantic": profile["enabled"],
+                    "semantic_score": round(semantic_score, 6),
+                    "dense_backend": profile.get("dense_backend", "EXACT_NATIVE_COSINE")
+                    if profile["enabled"]
+                    else "NOT_CONFIGURED",
+                    "late_interaction": "NOT_CONFIGURED",
+                },
+            }
+        )
     return sorted(result, key=lambda item: (-item["score"], item["path"]))[:8]

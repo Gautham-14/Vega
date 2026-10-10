@@ -2,12 +2,15 @@
 Aegis Sovereign AI Runtime - Zero-Egress Network Monitor
 Tracks simulated task network calls. It does not enforce an OS network boundary.
 """
-from typing import Dict, Any
+
+from typing import Dict
+
 
 class ZeroEgressMonitor:
     """
     Tracks calls made through this demo monitor only.
     """
+
     def __init__(self):
         self.external_dns_queries = 0
         self.external_http_requests = 0
@@ -34,5 +37,5 @@ class ZeroEgressMonitor:
             "egress_bytes": self.egress_bytes,
             "intercepted_probes": self.intercepted_attempts,
             "is_air_gapped": False,
-            "metrics_scope": "SIMULATED_TASK_CALLS"
+            "metrics_scope": "SIMULATED_TASK_CALLS",
         }

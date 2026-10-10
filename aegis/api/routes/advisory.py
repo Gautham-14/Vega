@@ -1,6 +1,8 @@
 """Authenticated advisory operations, available without demonstration mode."""
+
 from fastapi import APIRouter, Depends
 from pydantic import Field
+
 from aegis.advisory import service
 from aegis.coding import retrieval
 from aegis.control import data, policy, store
@@ -19,10 +21,17 @@ class ExportRequest(service.Strict):
 
 @router.get("/capabilities")
 def capabilities(identity=Depends(principal)):
-    return {"operations": ["source-import", "lease", "advisory", "reviewed-export"], "tools": [],
-            "ot_write": False, "automatic_model_loading": False, "automatic_downloads": False,
-            "retrieval": retrieval.configuration(), "hardware_attestation": False,
-            "live_model_quality": "REQUIRES_LATER_QUALIFICATION", "physical_zeroization": False}
+    return {
+        "operations": ["source-import", "lease", "advisory", "reviewed-export"],
+        "tools": [],
+        "ot_write": False,
+        "automatic_model_loading": False,
+        "automatic_downloads": False,
+        "retrieval": retrieval.configuration(),
+        "hardware_attestation": False,
+        "live_model_quality": "REQUIRES_LATER_QUALIFICATION",
+        "physical_zeroization": False,
+    }
 
 
 @router.post("/sources", status_code=201)
@@ -59,8 +68,11 @@ def lease_review(req: service.LeaseRequest, identity=Depends(principal)):
 
 @router.get("/leases")
 def leases(identity=Depends(principal)):
-    return [service.public(service.read("lease", item["id"])) for item in store.all_objects("advisory-lease")
-            if item["user"] == identity or item["issuer"] == identity]
+    return [
+        service.public(service.read("lease", item["id"]))
+        for item in store.all_objects("advisory-lease")
+        if item["user"] == identity or item["issuer"] == identity
+    ]
 
 
 @router.post("/leases/{lease_id}/revoke")
@@ -76,8 +88,11 @@ def run(req: service.RunRequest, identity=Depends(principal)):
 @router.get("/tasks")
 def tasks(identity=Depends(principal)):
     service.sweep()
-    return [service.public(service.read("task", item["id"])) for item in store.all_objects("advisory-task")
-            if item["user"] == identity]
+    return [
+        service.public(service.read("task", item["id"]))
+        for item in store.all_objects("advisory-task")
+        if item["user"] == identity
+    ]
 
 
 @router.get("/tasks/{task_id}")

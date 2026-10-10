@@ -1,16 +1,17 @@
 """Root-only coherent production archive without exposing keys to the API UID."""
+
 import argparse
 import base64
-from getpass import getpass
 import json
 import os
-from pathlib import Path
 import sqlite3
 import tempfile
+from getpass import getpass
+from pathlib import Path
 
+from aegis.security.key_custody import canonical, load
 from aegis.security.private_files import no_links
 from aegis.security.quiescence import exclusive
-from aegis.security.key_custody import load, canonical
 
 
 def main():
@@ -20,7 +21,9 @@ def main():
     parser.add_argument("--archive", required=True)
     args = parser.parse_args()
     if os.name != "posix" or os.geteuid() != 0:
-        raise RuntimeError("Production recovery export requires the offline Linux host administrator")
+        raise RuntimeError(
+            "Production recovery export requires the offline Linux host administrator"
+        )
     source, archive = no_links(args.runtime_data), no_links(args.archive)
     if archive.is_relative_to(source) or archive.exists():
         raise ValueError("Use a new archive outside live runtime storage")
@@ -38,7 +41,10 @@ def main():
             (stage / "control.key").chmod(0o600)
             (stage / "db").mkdir(mode=0o700)
             database = no_links(source / "db" / "aegis.db")
-            with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as original, sqlite3.connect(stage / "db" / "aegis.db") as copied:
+            with (
+                sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as original,
+                sqlite3.connect(stage / "db" / "aegis.db") as copied,
+            ):
                 original.backup(copied)
             total = entries = 0
             for name in ("knowledge", "receipts", "artifacts"):
@@ -68,6 +74,7 @@ def main():
             os.environ.pop("AEGIS_KEY_BROKER_SOCKET", None)
             os.environ.pop("AEGIS_RECOVERY_KEYRING", None)
             from aegis.security.recovery import create_backup
+
             print(json.dumps(create_backup(archive, password), sort_keys=True))
 
 

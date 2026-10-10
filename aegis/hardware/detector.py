@@ -2,14 +2,17 @@
 Aegis Sovereign AI Runtime - Hardware Detector
 Reads real system CPU, RAM, and GPU availability without external dependencies.
 """
-import platform
-import psutil
+
 import csv
 import io
 import os
+import platform
 import shutil
 import subprocess
-from typing import Dict, Any
+from typing import Any, Dict
+
+import psutil
+
 
 def detect_hardware() -> Dict[str, Any]:
     """Detect actual hardware specifications of the host machine."""
@@ -36,15 +39,18 @@ def detect_hardware() -> Dict[str, Any]:
         "required": False,
         "status": "UNAVAILABLE",
         "devices": [],
-        "inference_compatibility": "NOT_VERIFIED"
+        "inference_compatibility": "NOT_VERIFIED",
     }
 
     try:
         import torch
+
         if torch.cuda.is_available():
             gpu_info["present"] = True
             gpu_info["name"] = torch.cuda.get_device_name(0)
-            gpu_info["vram_mb"] = round(torch.cuda.get_device_properties(0).total_memory / (1024 * 1024), 1)
+            gpu_info["vram_mb"] = round(
+                torch.cuda.get_device_properties(0).total_memory / (1024 * 1024), 1
+            )
             gpu_info["status"] = "DETECTED_OPTIONAL"
     except Exception:
         pass
@@ -53,9 +59,18 @@ def detect_hardware() -> Dict[str, Any]:
     executable = shutil.which("nvidia-smi")
     if executable:
         try:
-            result = subprocess.run([executable, "--query-gpu=name,memory.total,memory.free", "--format=csv,noheader,nounits"],
-                                    capture_output=True, text=True, timeout=3, check=True,
-                                    creationflags=0x08000000 if os.name == "nt" else 0)
+            result = subprocess.run(
+                [
+                    executable,
+                    "--query-gpu=name,memory.total,memory.free",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=True,
+                creationflags=0x08000000 if os.name == "nt" else 0,
+            )
             devices = []
             if len(result.stdout) > 16000:
                 raise ValueError("GPU inventory exceeds limit")
@@ -65,10 +80,17 @@ def detect_hardware() -> Dict[str, Any]:
                 total, free = int(row[1].strip()), int(row[2].strip())
                 if not 0 <= free <= total:
                     raise ValueError("Invalid GPU memory")
-                devices.append({"name": row[0].strip()[:160], "vram_mb": total, "free_vram_mb": free})
+                devices.append(
+                    {"name": row[0].strip()[:160], "vram_mb": total, "free_vram_mb": free}
+                )
             if devices:
-                gpu_info.update(present=True, name=devices[0]["name"], vram_mb=devices[0]["vram_mb"],
-                                devices=devices, status="MEASURED_NVIDIA_SMI")
+                gpu_info.update(
+                    present=True,
+                    name=devices[0]["name"],
+                    vram_mb=devices[0]["vram_mb"],
+                    devices=devices,
+                    status="MEASURED_NVIDIA_SMI",
+                )
         except (OSError, ValueError, subprocess.SubprocessError):
             pass
 
@@ -84,5 +106,5 @@ def detect_hardware() -> Dict[str, Any]:
         "ram_usage_percent": ram_usage_pct,
         "gpu": gpu_info,
         "is_cpu_only_capable": True,
-        "air_gap_compliant": False
+        "air_gap_compliant": False,
     }

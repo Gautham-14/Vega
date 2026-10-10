@@ -1,13 +1,14 @@
 """Regression tests for startup credentials, bounded bodies and media CLI exports."""
+
 import asyncio
 import base64
-import hashlib
 import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 from starlette.testclient import TestClient
+
 from aegis import cli
 from aegis.api.limits import RequestBodyLimit
 from aegis.api.server import app
@@ -22,6 +23,7 @@ def test_environment_cannot_create_a_default_account(monkeypatch):
 
 def test_shell_never_attempts_silent_login(monkeypatch):
     import sys
+
     monkeypatch.setitem(sys.modules, "prompt_toolkit", None)
     client = Mock(url=cli.BASE_URL, session=SimpleNamespace(value={}))
     monkeypatch.setattr(cli, "has_rich", False)
@@ -30,28 +32,46 @@ def test_shell_never_attempts_silent_login(monkeypatch):
     client.login.assert_not_called()
 
 
-@pytest.mark.parametrize("headers,chunks,status", [
-    ([(b"content-length", b"4000001")], [], 413),
-    ([(b"content-length", b"-1")], [], 400),
-    ([(b"content-length", b"1"), (b"content-length", b"2")], [], 400),
-    ([], [b"x" * 2_000_000, b"y" * 2_000_001], 413),
-])
+@pytest.mark.parametrize(
+    "headers,chunks,status",
+    [
+        ([(b"content-length", b"4000001")], [], 413),
+        ([(b"content-length", b"-1")], [], 400),
+        ([(b"content-length", b"1"), (b"content-length", b"2")], [], 400),
+        ([], [b"x" * 2_000_000, b"y" * 2_000_001], 413),
+    ],
+)
 def test_body_limits_cover_chunked_and_declared_sizes(headers, chunks, status):
-    messages = [{"type": "http.request", "body": chunk, "more_body": i < len(chunks) - 1} for i, chunk in enumerate(chunks)]
+    messages = [
+        {"type": "http.request", "body": chunk, "more_body": i < len(chunks) - 1}
+        for i, chunk in enumerate(chunks)
+    ]
     responses = []
+
     async def receive():
         return messages.pop(0)
+
     async def send(message):
         responses.append(message)
+
     async def downstream(*args):
         pytest.fail("Oversized body reached the JSON parser")
-    asyncio.run(RequestBodyLimit(downstream)({"type": "http", "method": "POST", "path": "/api/coding/tasks", "headers": headers}, receive, send))
+
+    asyncio.run(
+        RequestBodyLimit(downstream)(
+            {"type": "http", "method": "POST", "path": "/api/coding/tasks", "headers": headers},
+            receive,
+            send,
+        )
+    )
     assert responses[0]["status"] == status
 
 
 def test_media_cli_attaches_only_explicit_files(tmp_path):
     metadata = tmp_path / "request.json"
-    metadata.write_text(json.dumps({"capsule_id": "capsule-x", "operation": "understand", "prompt": "Describe it"}))
+    metadata.write_text(
+        json.dumps({"capsule_id": "capsule-x", "operation": "understand", "prompt": "Describe it"})
+    )
     image = tmp_path / "image.png"
     image.write_bytes(b"image bytes validated by the server")
     client = Mock()
@@ -64,10 +84,14 @@ def test_media_cli_attaches_only_explicit_files(tmp_path):
 
 def test_media_cli_review_displays_preview_links_without_base64():
     client = Mock(url=cli.BASE_URL)
-    client.call.return_value = {"request": {"images": [{"data": "private-pixel-bytes", "sha256": "a" * 64}]}}
+    client.call.return_value = {
+        "request": {"images": [{"data": "private-pixel-bytes", "sha256": "a" * 64}]}
+    }
     result = cli.execute(cli.build_parser().parse_args(["media-review", "MEDIA-test"]), client)
     assert "private-pixel-bytes" not in json.dumps(result)
-    assert result["request"]["images"][0]["preview_url"].endswith("/media/tasks/MEDIA-test/images/input/0")
+    assert result["request"]["images"][0]["preview_url"].endswith(
+        "/media/tasks/MEDIA-test/images/input/0"
+    )
 
 
 def test_media_export_hash_no_overwrite_and_permissions(tmp_path):
@@ -86,7 +110,9 @@ def test_media_export_hash_no_overwrite_and_permissions(tmp_path):
     assert not missing.exists()
 
 
-@pytest.mark.parametrize("field", ["id", "sequence", "timestamp", "previous_receipt_hash", "receipt_hash"])
+@pytest.mark.parametrize(
+    "field", ["id", "sequence", "timestamp", "previous_receipt_hash", "receipt_hash"]
+)
 def test_receipt_metadata_cannot_replace_chain_fields(field):
     with pytest.raises(ValueError, match="chain identity"):
         store.receipt("FIXTURE", **{field: "bad"})
@@ -95,6 +121,7 @@ def test_receipt_metadata_cannot_replace_chain_fields(field):
 def test_capacity_command_does_not_read_or_modify_session(monkeypatch, capsys):
     def client(*args, **kwargs):
         pytest.fail("Pure capacity arithmetic must not open account/session storage")
+
     monkeypatch.setattr(cli, "Client", client)
     assert cli.main(["capacity", "1000", "--bits", "4"]) == 0
     assert json.loads(capsys.readouterr().out)["raw_weights_gb"] == 500

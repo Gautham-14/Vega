@@ -3,16 +3,18 @@
 Expired leases recover after a crash. Ledger rows are never silently discarded.
 Resource denial does not append another receipt and amplify an exhausted ledger.
 """
-from contextlib import contextmanager
-from contextvars import ContextVar
+
 import os
 import shutil
 import threading
 import time
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from fastapi import HTTPException
+
 from aegis import config
 from aegis.storage.database import get_db_connection
 
@@ -39,26 +41,42 @@ def admit(kind, actor=None, provider=""):
     identity = uuid.uuid4().hex
     now = time.time()
     with get_db_connection() as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS admission_leases (id TEXT PRIMARY KEY, kind TEXT NOT NULL, actor TEXT NOT NULL, provider TEXT NOT NULL, expires_at REAL NOT NULL)")
         conn.execute("BEGIN IMMEDIATE")
         conn.execute("DELETE FROM admission_leases WHERE expires_at<=?", (now,))
-        rows = conn.execute("SELECT actor,provider FROM admission_leases WHERE kind=?", (kind,)).fetchall()
-        if (len(rows) >= global_limit or sum(row["actor"] == actor for row in rows) >= actor_limit
-            or (kind == "provider" and sum(row["provider"] == provider for row in rows) >= 2)):
-            raise HTTPException(429, "Resource budget exhausted; retry after active work completes", headers={"Retry-After": "5"})
-        conn.execute("INSERT INTO admission_leases VALUES(?,?,?,?,?)", (identity, kind, actor, provider, now + 300))
+        rows = conn.execute(
+            "SELECT actor,provider FROM admission_leases WHERE kind=?", (kind,)
+        ).fetchall()
+        if (
+            len(rows) >= global_limit
+            or sum(row["actor"] == actor for row in rows) >= actor_limit
+            or (kind == "provider" and sum(row["provider"] == provider for row in rows) >= 2)
+        ):
+            raise HTTPException(
+                429,
+                "Resource budget exhausted; retry after active work completes",
+                headers={"Retry-After": "5"},
+            )
+        conn.execute(
+            "INSERT INTO admission_leases VALUES(?,?,?,?,?)",
+            (identity, kind, actor, provider, now + 300),
+        )
     try:
         storage_budget()
         stopped = threading.Event()
+
         def renew():
             while not stopped.wait(30):
                 try:
                     with get_db_connection() as conn:
-                        conn.execute("UPDATE admission_leases SET expires_at=? WHERE id=?", (time.time() + 300, identity))
+                        conn.execute(
+                            "UPDATE admission_leases SET expires_at=? WHERE id=?",
+                            (time.time() + 300, identity),
+                        )
                 except Exception:
                     # Storage failure blocks subsequent admission. Do not create
                     # recursively growing error records during disk exhaustion.
                     return
+
         heartbeat = threading.Thread(target=renew, daemon=True)
         heartbeat.start()
         yield
@@ -77,13 +95,23 @@ def storage_budget(*, force=False):
         now = time.monotonic()
         if not force and _budget.get(path, 0) > now - 5:
             return
-        maximum = bounded_setting("AEGIS_MANAGED_STORAGE_BYTES", 1024 ** 3, 16 * 1024 ** 2, 16 * 1024 ** 3)
-        minimum_free = bounded_setting("AEGIS_MIN_FREE_BYTES", 64 * 1024 ** 2, 1024 ** 2, 1024 ** 3)
+        maximum = bounded_setting(
+            "AEGIS_MANAGED_STORAGE_BYTES", 1024**3, 16 * 1024**2, 16 * 1024**3
+        )
+        minimum_free = bounded_setting("AEGIS_MIN_FREE_BYTES", 64 * 1024**2, 1024**2, 1024**3)
         size = entries = 0
         from aegis.security.private_files import no_links
-        for root in (config.DB_DIR, config.KNOWLEDGE_DIR, config.RECEIPTS_DIR, config.ARTIFACTS_DIR):
+
+        for root in (
+            config.DB_DIR,
+            config.KNOWLEDGE_DIR,
+            config.RECEIPTS_DIR,
+            config.ARTIFACTS_DIR,
+        ):
+
             def unreadable(error):
                 raise OSError("Cannot completely inventory managed storage") from error
+
             for current, dirs, files in os.walk(root, followlinks=False, onerror=unreadable):
                 entries += len(dirs) + len(files)
                 if entries > 20000:
@@ -104,6 +132,8 @@ def maintenance():
     with get_db_connection() as conn:
         conn.execute("DELETE FROM auth_sessions WHERE expires_at<=?", (time.time(),))
         conn.execute("DELETE FROM auth_attempts WHERE window_start<?", (time.time() - 300,))
-        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
+        tables = {
+            row[0] for row in conn.execute("SELECT name FROM sqlite_schema WHERE type='table'")
+        }
         if "admission_leases" in tables:
             conn.execute("DELETE FROM admission_leases WHERE expires_at<=?", (time.time(),))

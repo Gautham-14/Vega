@@ -1,13 +1,14 @@
 """Recovery must preserve the trust key and reject untrusted snapshots."""
-import sqlite3
+
 import os
+import sqlite3
 
 import pytest
 
 from aegis import config
 from aegis.control import store
 from aegis.security import auth, recovery
-from aegis.storage.database import init_db, get_db_connection
+from aegis.storage.database import get_db_connection, init_db
 
 
 def test_encrypted_backup_restores_database_key_and_managed_files(tmp_path):
@@ -27,17 +28,21 @@ def test_encrypted_backup_restores_database_key_and_managed_files(tmp_path):
     assert restored["files"] == 3
     if os.name == "nt":
         from aegis.security.dpapi import unprotect
+
         assert not (target / "control.key").exists()
         assert unprotect((target / "control.key.dpapi").read_bytes()) == original_key
     else:
         assert (target / "control.key").read_bytes() == original_key
-    assert (target / "knowledge" / "example.txt").read_text(encoding="utf-8") == "approved local document"
+    assert (target / "knowledge" / "example.txt").read_text(
+        encoding="utf-8"
+    ) == "approved local document"
     with sqlite3.connect(target / "db" / "aegis.db") as db:
         assert db.execute("SELECT actor FROM auth_accounts").fetchone()[0] == "operator"
     with pytest.raises(ValueError, match="new directory"):
         recovery.restore_backup(archive, target, "a-long-test-backup-passphrase")
-    drilled = recovery.drill_backup(archive, tmp_path.parent / f"{tmp_path.name}-drill",
-                                    "a-long-test-backup-passphrase")
+    drilled = recovery.drill_backup(
+        archive, tmp_path.parent / f"{tmp_path.name}-drill", "a-long-test-backup-passphrase"
+    )
     assert drilled["post_restore_verified"] and drilled["receipt_chain_verified"]
 
 
@@ -57,4 +62,6 @@ def test_backup_rejects_wrong_passphrase_tampering_and_bad_receipt(tmp_path):
     with get_db_connection() as db:
         db.execute("UPDATE control_head SET signature=?", ("0" * 64,))
     with pytest.raises(ValueError, match="receipt chain"):
-        recovery.create_backup(tmp_path.parent / f"{tmp_path.name}-bad.aegis-backup", "a-long-test-backup-passphrase")
+        recovery.create_backup(
+            tmp_path.parent / f"{tmp_path.name}-bad.aegis-backup", "a-long-test-backup-passphrase"
+        )

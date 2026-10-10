@@ -1,8 +1,10 @@
+import time
+
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
-from aegis.security import auth
+
 from aegis.control import policy
-import time
+from aegis.security import auth
 
 router = APIRouter(prefix="/api/auth", tags=["Local authentication"])
 
@@ -21,15 +23,28 @@ class StepUp(BaseModel):
 
 @router.get("/status")
 def status():
-    return {"configured": auth.configured(), "demo": auth.demo_identity_enabled(),
-            "session_seconds": auth.SESSION_SECONDS, "provisioning": "Local administrator CLI only"}
+    return {
+        "configured": auth.configured(),
+        "demo": auth.demo_identity_enabled(),
+        "session_seconds": auth.SESSION_SECONDS,
+        "provisioning": "Local administrator CLI only",
+    }
 
 
 @router.post("/login")
 def login(body: Login, request: Request, response: Response):
-    result = auth.login(body.username, body.password, request.client.host if request.client else "local", body.otp)
-    response.set_cookie("aegis_session", result["access_token"], max_age=max(0, int(result["expires_at"] - time.time())),
-                        httponly=True, samesite="strict", secure=request.url.scheme == "https", path="/api")
+    result = auth.login(
+        body.username, body.password, request.client.host if request.client else "local", body.otp
+    )
+    response.set_cookie(
+        "aegis_session",
+        result["access_token"],
+        max_age=max(0, int(result["expires_at"] - time.time())),
+        httponly=True,
+        samesite="strict",
+        secure=request.url.scheme == "https",
+        path="/api",
+    )
     response.headers["Cache-Control"] = "no-store"
     return result
 

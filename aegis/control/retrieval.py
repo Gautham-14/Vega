@@ -1,9 +1,11 @@
 """Replaceable department-local retrieval interfaces with deterministic mock engines."""
+
 import re
 from decimal import Decimal, InvalidOperation
 from typing import Protocol
-from aegis.control.store import Denied, digest
+
 from aegis.control.data import source_current
+from aegis.control.store import Denied, digest
 
 
 class EmbeddingProvider(Protocol):
@@ -24,14 +26,18 @@ class Reranker(Protocol):
 
 class MockEmbedding:
     def embed(self, text):
-        return [int(digest(text)[i:i + 2], 16) / 255 for i in range(0, 32, 2)]
+        return [int(digest(text)[i : i + 2], 16) / 255 for i in range(0, 32, 2)]
 
 
 class MockVector:
     def search(self, namespace, vector, documents):
         if any(d["namespace"] != namespace for d in documents):
-            raise Denied("COMPARTMENT_VIOLATION", "Search backend received another department's documents")
-        return [d["id"] for d in documents]  # Explicit mock candidates, not semantic relevance claims.
+            raise Denied(
+                "COMPARTMENT_VIOLATION", "Search backend received another department's documents"
+            )
+        return [
+            d["id"] for d in documents
+        ]  # Explicit mock candidates, not semantic relevance claims.
 
 
 class ExactLexical:
@@ -41,7 +47,9 @@ class ExactLexical:
         scored = []
         for d in documents:
             text = (d["id"] + " " + d["equipment"] + " " + d["title"]).lower()
-            score = sum(10 for i in identifiers if i in text) + len(words & set(re.findall(r"\w+", text)))
+            score = sum(10 for i in identifiers if i in text) + len(
+                words & set(re.findall(r"\w+", text))
+            )
             if score:
                 scored.append((score, d["id"]))
         return [identity for _, identity in sorted(scored, reverse=True)]
@@ -79,14 +87,22 @@ class HybridRetrieval:
         selected = []
         families = {(d["compartment"], d["family"]) for d in current}
         for compartment, family in families:
-            candidates = [d for d in current if d["family"] == family and d["compartment"] == compartment]
+            candidates = [
+                d for d in current if d["family"] == family and d["compartment"] == compartment
+            ]
             latest = max(d["effective_date"] for d in candidates)
             newest = [d for d in candidates if d["effective_date"] == latest]
             if len(newest) != 1:
-                rejected.extend({"source_id": d["id"], "state": "CONFLICTING SOURCE"} for d in candidates)
+                rejected.extend(
+                    {"source_id": d["id"], "state": "CONFLICTING SOURCE"} for d in candidates
+                )
             else:
                 selected.extend(newest)
-                rejected.extend({"source_id": d["id"], "state": "SUPERSEDED SOURCE"} for d in candidates if d != newest[0])
+                rejected.extend(
+                    {"source_id": d["id"], "state": "SUPERSEDED SOURCE"}
+                    for d in candidates
+                    if d != newest[0]
+                )
         route = self.route(query)
         vector = self.embedding.embed(query) if route in {"SEMANTIC", "MIXED"} else []
         workspace.memory["query_vector"] = vector
@@ -100,11 +116,23 @@ class HybridRetrieval:
                 ids.extend(self.vector.search("index:" + compartment, vector, department_docs))
         ids = self.reranker.rank(query, ids)
         result = [next(d for d in selected if d["id"] == identity) for identity in ids]
-        return {"route": route, "documents": result, "rejected": rejected,
-                "audit": {"source_ids": ids, "namespaces": ["index:" + c for c in compartments]}}
+        return {
+            "route": route,
+            "documents": result,
+            "rejected": rejected,
+            "audit": {"source_ids": ids, "namespaces": ["index:" + c for c in compartments]},
+        }
 
 
-EVIDENCE_STATES = ["VERIFIED", "SUPPORTED", "PARTIALLY SUPPORTED", "UNSUPPORTED", "CONFLICTING SOURCE", "SUPERSEDED SOURCE", "NOT AUTHORIZED"]
+EVIDENCE_STATES = [
+    "VERIFIED",
+    "SUPPORTED",
+    "PARTIALLY SUPPORTED",
+    "UNSUPPORTED",
+    "CONFLICTING SOURCE",
+    "SUPERSEDED SOURCE",
+    "NOT AUTHORIZED",
+]
 
 
 def verify_claim(claim, sources, disclosed):
@@ -126,11 +154,24 @@ def verify_claim(claim, sources, disclosed):
             left, right = Decimal(fields[calc["numerator"]]), Decimal(fields[calc["denominator"]])
             result = Decimal(calc["result"])
             exact_statement = f"{left} / {right} = {result}"
-            state = "VERIFIED" if (left.is_finite() and right.is_finite() and result.is_finite()
-                                   and right != 0 and left / right == result and claim["text"] == exact_statement) else "UNSUPPORTED"
+            state = (
+                "VERIFIED"
+                if (
+                    left.is_finite()
+                    and right.is_finite()
+                    and result.is_finite()
+                    and right != 0
+                    and left / right == result
+                    and claim["text"] == exact_statement
+                )
+                else "UNSUPPORTED"
+            )
         except (InvalidOperation, KeyError, TypeError, ZeroDivisionError):
             state = "UNSUPPORTED"
-    elif claim.get("quote") in disclosed.get(source["id"], {}).values() and claim["quote"] in claim["text"]:
+    elif (
+        claim.get("quote") in disclosed.get(source["id"], {}).values()
+        and claim["quote"] in claim["text"]
+    ):
         state = "PARTIALLY SUPPORTED"
     else:
         state = "UNSUPPORTED"

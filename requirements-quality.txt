@@ -1,0 +1,7 @@
+# Development and release checks, not runtime dependencies.
+ruff==0.17.0
+mypy==2.4.0
+coverage==7.16.2
+build==1.6.1
+setuptools==84.0.0
+wheel==0.48.0

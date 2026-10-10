@@ -53,8 +53,10 @@ future writes; it does not erase older backup keys.
 The systemd files in `deploy/systemd` are deployment templates for a trusted,
 maintained Linux host with systemd network/mount namespaces. The initial model
 adapter is a reviewed mmap-based llama.cpp CPU server with pinned GGUF files.
-Other engines and Windows production require their own independently reviewed
-isolation/attestation adapters and currently fail the production prerequisite.
+Windows/macOS production operators use the isolated guest backend described in
+VM_DEPLOYMENT.md, with these same independent guest-side services. Other serving
+engines still need independently reviewed isolation/attestation adapters. No
+VM installation or real infrastructure acceptance was performed on this device.
 
 1. Verify an application release with the separately pinned publisher policy.
    Install immutable, root-owned application files at `/opt/aegis`. Create the

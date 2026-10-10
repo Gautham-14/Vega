@@ -1,4 +1,5 @@
 """Temporary task folders with application-level access checks, not an OS sandbox."""
+
 import hashlib
 import shutil
 from pathlib import Path
@@ -11,8 +12,14 @@ from aegis.storage.paths import contained_file, safe_filename
 
 
 class EphemeralEnclave:
-    def __init__(self, task_id: str, department: str, equipment_id: str,
-                 operator_role: str = "Engineer", user_clearance: str = "INTERNAL"):
+    def __init__(
+        self,
+        task_id: str,
+        department: str,
+        equipment_id: str,
+        operator_role: str = "Engineer",
+        user_clearance: str = "INTERNAL",
+    ):
         safe_filename(task_id)
         self.task_id = task_id
         self.department = department
@@ -51,10 +58,16 @@ class EphemeralEnclave:
             return False
         with target.open("xb") as stream:
             stream.write(content.encode("utf-8"))
-        self.mounted_files.append({
-            "filename": filename, "revision": doc["revision"], "sha256": digest,
-            "path": str(target), "department": doc["department"], "equipment_id": doc["equipment_id"]
-        })
+        self.mounted_files.append(
+            {
+                "filename": filename,
+                "revision": doc["revision"],
+                "sha256": digest,
+                "path": str(target),
+                "department": doc["department"],
+                "equipment_id": doc["equipment_id"],
+            }
+        )
         return True
 
     def export_artifact(self, filename: str, content: str) -> Path:
@@ -73,8 +86,12 @@ class EphemeralEnclave:
 
     def get_summary(self) -> dict:
         return {
-            "task_id": self.task_id, "enclave_path": str(self.enclave_dir),
-            "network_disabled": False, "isolation_scope": "APPLICATION_FOLDER_POLICY",
-            "mounted_files_count": len(self.mounted_files), "mounted_files": self.mounted_files,
-            "blocked_files_count": len(self.blocked_files), "blocked_files": self.blocked_files
+            "task_id": self.task_id,
+            "enclave_path": str(self.enclave_dir),
+            "network_disabled": False,
+            "isolation_scope": "APPLICATION_FOLDER_POLICY",
+            "mounted_files_count": len(self.mounted_files),
+            "mounted_files": self.mounted_files,
+            "blocked_files_count": len(self.blocked_files),
+            "blocked_files": self.blocked_files,
         }

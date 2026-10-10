@@ -1,17 +1,20 @@
 """Real kernel peer-identity checks; explicitly run as root in Linux CI."""
-import json
+
 import multiprocessing
 import os
-from pathlib import Path
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 import pytest
+
 from aegis.security import key_custody, local_rpc
 
-pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux") or getattr(os, "geteuid", lambda: -1)() != 0,
-    reason="Separate-UID kernel custody integration requires Linux root")
+pytestmark = pytest.mark.skipif(
+    not sys.platform.startswith("linux") or getattr(os, "geteuid", lambda: -1)() != 0,
+    reason="Separate-UID kernel custody integration requires Linux root",
+)
 
 
 def _server(path, value):
@@ -47,8 +50,11 @@ def test_kernel_peer_credentials_and_no_export():
                 if time.monotonic() > deadline or not server.is_alive():
                     pytest.fail("Custody service did not start")
                 time.sleep(0.02)
-            for uid, request, expected in [(65534, {"operation": "status"}, True),
-                (10001, {"operation": "status"}, False), (65534, {"operation": "export"}, False)]:
+            for uid, request, expected in [
+                (65534, {"operation": "status"}, True),
+                (10001, {"operation": "status"}, False),
+                (65534, {"operation": "export"}, False),
+            ]:
                 receiver, sender = context.Pipe(duplex=False)
                 client = context.Process(target=_client, args=(path, uid, request, sender))
                 client.start()

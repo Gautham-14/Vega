@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "cases": [
+    {"id": "capital-france", "role": "text", "prompt": "What is the capital of France? Answer in one sentence.", "color": null, "check": {"kind": "contains", "groups": [["Paris"]]}},
+    {"id": "arithmetic", "role": "text", "prompt": "What is 17 plus 25? Answer briefly.", "color": null, "check": {"kind": "contains", "groups": [["42", "forty-two"]]}},
+    {"id": "heat-transfer", "role": "text", "prompt": "In which direction does heat spontaneously flow between two objects at different temperatures? Answer briefly.", "color": null, "check": {"kind": "contains", "groups": [["hot", "hotter", "warmer"], ["cold", "colder", "cooler"]]}},
+    {"id": "definition-photosynthesis", "role": "text", "prompt": "What do plants use as the energy source for photosynthesis? Answer in one sentence.", "color": null, "check": {"kind": "contains", "groups": [["sunlight", "sun", "light"]]}},
+    {"id": "code-square", "role": "code", "prompt": "Write only a Python function square(x) that returns x multiplied by x. Include the code in your answer.", "color": null, "check": {"kind": "python-square", "groups": []}},
+    {"id": "code-add", "role": "code", "prompt": "Write only a Python function add(a, b) that returns a + b. Include the code in your answer.", "color": null, "check": {"kind": "python-add", "groups": []}},
+    {"id": "semantic-add", "role": "code", "prompt": "Implement a reusable subroutine taking two numbers and returning their sum. Include the implementation, not just a description.", "color": null, "check": {"kind": "python-add", "groups": []}},
+    {"id": "semantic-loop", "role": "code", "prompt": "Help me implement a loop that adds all integers from 1 to n.", "color": null, "check": {"kind": "contains", "groups": [["range", "sum", "for", "while"]]}},
+    {"id": "vision-red", "role": "vision", "prompt": "What is the main color of this image? Answer briefly.", "color": "red", "check": {"kind": "contains", "groups": [["red"]]}},
+    {"id": "vision-blue", "role": "vision", "prompt": "What is the main color of this image? Answer briefly.", "color": "blue", "check": {"kind": "contains", "groups": [["blue"]]}},
+    {"id": "vision-green", "role": "vision", "prompt": "What is the main color of this image? Answer briefly.", "color": "green", "check": {"kind": "contains", "groups": [["green"]]}},
+    {"id": "vision-over-code", "role": "vision", "prompt": "Before writing Python code, describe the main color of this image.", "color": "red", "check": {"kind": "contains", "groups": [["red"]]}}
+  ]
+}

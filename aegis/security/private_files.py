@@ -1,17 +1,19 @@
 """Owner-only local files; never place a secret in a command-line argument."""
+
 from __future__ import annotations
 
 import ctypes
 import ntpath
 import os
-from pathlib import Path
 import re
 import stat
+from pathlib import Path
 
 
 def windows_user_sid() -> str:
     """Read the process token directly; no shell or account-name lookup."""
     from ctypes import wintypes
+
     advapi = ctypes.WinDLL("advapi32", use_last_error=True)
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     process = kernel.GetCurrentProcess
@@ -26,8 +28,13 @@ def windows_user_sid() -> str:
         raise PermissionError("Cannot read Windows process identity")
     try:
         get_info = advapi.GetTokenInformation
-        get_info.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
-                             ctypes.POINTER(wintypes.DWORD)]
+        get_info.argtypes = [
+            wintypes.HANDLE,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
         get_info.restype = wintypes.BOOL
         required = wintypes.DWORD()
         get_info(token, 1, None, 0, ctypes.byref(required))  # TokenUser
@@ -40,7 +47,10 @@ def windows_user_sid() -> str:
         sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
         text = wintypes.LPWSTR()
         convert = advapi.ConvertSidToStringSidW
-        convert.argtypes, convert.restype = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)], wintypes.BOOL
+        convert.argtypes, convert.restype = (
+            [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)],
+            wintypes.BOOL,
+        )
         if not convert(sid, ctypes.byref(text)):
             raise PermissionError("Cannot decode Windows process identity")
         try:
@@ -62,8 +72,12 @@ def no_links(path: str | Path) -> Path:
     if not isinstance(raw, str) or not raw or raw.replace("/", "\\").startswith("\\\\"):
         raise ValueError("Use a local filesystem path, not a network or device path")
     drive, tail = ntpath.splitdrive(raw)
-    if (drive and (len(drive) != 2 or drive[1] != ":" or not drive[0].isalpha()
-                   or not tail.startswith(("/", "\\")))):
+    if drive and (
+        len(drive) != 2
+        or drive[1] != ":"
+        or not drive[0].isalpha()
+        or not tail.startswith(("/", "\\"))
+    ):
         raise ValueError("Use an absolute local drive path")
     if ":" in tail or any(ord(c) < 32 for c in raw):
         raise ValueError("Alternate streams and control characters are not allowed")
@@ -71,14 +85,21 @@ def no_links(path: str | Path) -> Path:
     if os.name == "nt":
         drive_type = ctypes.windll.kernel32.GetDriveTypeW
         drive_type.argtypes, drive_type.restype = [ctypes.c_wchar_p], ctypes.c_uint
-        if drive_type(path.anchor) not in {2, 3, 5, 6}:  # removable/fixed/CD/RAM; never mapped network drives
+        if drive_type(path.anchor) not in {
+            2,
+            3,
+            5,
+            6,
+        }:  # removable/fixed/CD/RAM; never mapped network drives
             raise ValueError("Storage must use an available local drive")
     for part in (path, *path.parents):
         try:
             info = part.lstat()
         except FileNotFoundError:
             continue
-        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & getattr(
+            stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400
+        ):
             raise ValueError(f"Symbolic links and junctions are not allowed: {part}")
         if stat.S_ISREG(info.st_mode) and info.st_nlink != 1:
             raise ValueError("Hard-linked files are not allowed")
@@ -97,7 +118,12 @@ def restrict_permissions(path: str | Path, directory: bool = False) -> None:
     advapi = ctypes.WinDLL("advapi32", use_last_error=True)
     descriptor = ctypes.c_void_p()
     convert = advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW
-    convert.argtypes = [ctypes.c_wchar_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_ulong)]
+    convert.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_ulong,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_ulong),
+    ]
     convert.restype = ctypes.c_int
     flags = "OICI" if directory else ""
     if not convert(f"D:P(A;{flags};FA;;;{sid})", 1, ctypes.byref(descriptor), None):

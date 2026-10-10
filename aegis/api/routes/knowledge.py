@@ -1,18 +1,22 @@
 """
 Aegis Sovereign AI Runtime - Knowledge API Route
 """
-from fastapi import APIRouter, HTTPException, Query
-from typing import Dict, Any, List, Optional
+
+from typing import Any, Dict, List
+
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
 from aegis.api.demo import require_demo_mode
 from aegis.knowledge.registry import (
+    add_document,
+    find_authoritative_document,
     get_all_documents,
     get_document_by_id,
-    add_document,
-    find_authoritative_document
 )
 
 router = APIRouter(prefix="/api/knowledge", tags=["Knowledge"])
+
 
 class DocumentUploadRequest(BaseModel):
     id: str
@@ -26,21 +30,18 @@ class DocumentUploadRequest(BaseModel):
     effective_date: str = "2024-01-01"
     content: str
 
+
 @router.get("")
 def list_documents(include_quarantined: bool = True) -> List[Dict[str, Any]]:
     return get_all_documents(include_quarantined=include_quarantined)
 
+
 @router.get("/search/authoritative")
-def query_authoritative_sop(
-    equipment_id: str,
-    department: str,
-    doc_family: str
-) -> Dict[str, Any]:
+def query_authoritative_sop(equipment_id: str, department: str, doc_family: str) -> Dict[str, Any]:
     return find_authoritative_document(
-        equipment_id=equipment_id,
-        department=department,
-        doc_family=doc_family
+        equipment_id=equipment_id, department=department, doc_family=doc_family
     )
+
 
 @router.get("/{doc_id}")
 def get_doc(doc_id: str) -> Dict[str, Any]:
@@ -48,6 +49,7 @@ def get_doc(doc_id: str) -> Dict[str, Any]:
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return doc
+
 
 @router.post("/upload")
 def upload_document(req: DocumentUploadRequest) -> Dict[str, Any]:

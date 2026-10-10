@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "qemu": "C:/reviewed-aegis/qemu/qemu-system-x86_64.exe",
+  "qemu_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "firmware_directory": "C:/reviewed-aegis/qemu/share",
+  "firmware_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "root_image": "C:/reviewed-aegis/images/root.raw",
+  "root_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "state_image": "C:/reviewed-aegis/images/state.raw",
+  "tls_directory": "C:/reviewed-aegis/tls",
+  "server_certificate_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "api_port": 8000,
+  "channel_port": 18766,
+  "memory_mib": 8192,
+  "cpus": 4,
+  "accelerator": "tcg"
+}

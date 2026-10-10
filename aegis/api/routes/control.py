@@ -1,12 +1,24 @@
 """Local-only, opt-in simulation API. Persona IDs simulate identity, not authentication."""
+
 import os
 from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+
 from aegis.api.demo import require_demo_mode
-from aegis.control import artifacts, capsules, data, demo, leases, packages, policy, store
+from aegis.control import (
+    artifacts,
+    capsules,
+    data,
+    demo,
+    leases,
+    packages,
+    policy,
+    store,
+)
 from aegis.control.runtime import GovernedRunner
-from aegis.security.auth import principal, configured
+from aegis.security.auth import configured, principal
 
 router = APIRouter(prefix="/api/control", tags=["Sovereign control plane"])
 
@@ -20,7 +32,17 @@ class CapsuleRequest(Strict):
 
 
 class ApprovalRequest(Strict):
-    action: Literal["capsule", "package", "export", "key-release", "combined-analysis", "ot-write", "policy-change", "rollback-override", "learning"]
+    action: Literal[
+        "capsule",
+        "package",
+        "export",
+        "key-release",
+        "combined-analysis",
+        "ot-write",
+        "policy-change",
+        "rollback-override",
+        "learning",
+    ]
     binding: dict
 
 
@@ -53,7 +75,9 @@ class SourceRequest(Strict):
     effective_date: str
     permitted_skills: list[str] = Field(min_length=1, max_length=10)
     fields: dict[str, str]
-    field_rules: dict[str, Literal["expose", "mask", "pseudonymize", "remove", "tool-only", "recipient-only"]]
+    field_rules: dict[
+        str, Literal["expose", "mask", "pseudonymize", "remove", "tool-only", "recipient-only"]
+    ]
 
 
 class LeaseRequest(Strict):
@@ -116,35 +140,68 @@ class LearningPlan(Strict):
 
 @router.get("/status")
 def status():
-    return {"enabled": configured() or os.environ.get("AEGIS_ENABLE_DEMO_ENDPOINTS") == "1", "mode": "Software-simulated attestation",
-            "identity": "AUTHENTICATED_LOCAL_ACCOUNTS" if configured() else "LOCAL_DEMO_PERSONAS_NOT_AUTHENTICATION", "policy_version": policy.POLICY_VERSION,
-            "training": "DISABLED", "automatic_chat_learning": "DISABLED", "persistent_memory": "DISABLED",
-            "hardware_attestation": False, "physical_zeroization": False, "os_network_isolation": False}
+    return {
+        "enabled": configured() or os.environ.get("AEGIS_ENABLE_DEMO_ENDPOINTS") == "1",
+        "mode": "Software-simulated attestation",
+        "identity": "AUTHENTICATED_LOCAL_ACCOUNTS"
+        if configured()
+        else "LOCAL_DEMO_PERSONAS_NOT_AUTHENTICATION",
+        "policy_version": policy.POLICY_VERSION,
+        "training": "DISABLED",
+        "automatic_chat_learning": "DISABLED",
+        "persistent_memory": "DISABLED",
+        "hardware_attestation": False,
+        "physical_zeroization": False,
+        "os_network_isolation": False,
+    }
 
 
 @router.get("/state")
 def state(identity=Depends(principal)):
     person = policy.actor(identity)
     audit = person["role"] in {"Auditor", "Security Officer"}
+
     def visible(source):
-        return source["compartment"] in person["compartments"] and policy.LEVELS[source["classification"]] <= policy.LEVELS[person["clearance"]]
+        return (
+            source["compartment"] in person["compartments"]
+            and policy.LEVELS[source["classification"]] <= policy.LEVELS[person["clearance"]]
+        )
+
     def package_summary(value):
-        return {k: v for k, v in value.items() if k in {"id", "status", "faults", "imported_at", "qualification", "shadow"}}
+        return {
+            k: v
+            for k, v in value.items()
+            if k in {"id", "status", "faults", "imported_at", "qualification", "shadow"}
+        }
+
     def capsule_summary(value):
         return {k: v for k, v in value.items() if k in {"id", "status", "approval_id"}}
+
     # Full arbitrary import manifests/components belong to model custody, not the
     # unscoped workspace read API. Demo retains its original walkthrough fields.
     from aegis.security.auth import demo_identity_enabled
+
     full = demo_identity_enabled() or person["role"] in {"Model Custodian", "Security Officer"}
-    return {"actors": policy.ACTORS, "skills": policy.SKILLS, "demo": store.get("demo", "main"),
-            "capsules": [v if full else capsule_summary(v) for v in store.all_objects("capsule")],
-            "packages": [v if full else package_summary(v) for v in store.all_objects("package")],
-            "sources": [data.public_source(s) for s in store.all_objects("source") if visible(s)],
-            "approvals": [v for v in store.all_objects("approval") if audit or v["requester"] == identity or person["role"] in v["required_roles"]],
-            "leases": [v for v in store.all_objects("lease") if audit or identity in {v["user"], v["issuer"]}],
-            "tasks": [v for v in store.all_objects("task") if v.get("user") == identity],
-            "artifacts": [v for v in store.all_objects("artifact") if v.get("owner") == identity],
-            "receipts": [v for v in store.receipts() if audit or v["actor"] == identity], "chain": store.verify_chain()}
+    return {
+        "actors": policy.ACTORS,
+        "skills": policy.SKILLS,
+        "demo": store.get("demo", "main"),
+        "capsules": [v if full else capsule_summary(v) for v in store.all_objects("capsule")],
+        "packages": [v if full else package_summary(v) for v in store.all_objects("package")],
+        "sources": [data.public_source(s) for s in store.all_objects("source") if visible(s)],
+        "approvals": [
+            v
+            for v in store.all_objects("approval")
+            if audit or v["requester"] == identity or person["role"] in v["required_roles"]
+        ],
+        "leases": [
+            v for v in store.all_objects("lease") if audit or identity in {v["user"], v["issuer"]}
+        ],
+        "tasks": [v for v in store.all_objects("task") if v.get("user") == identity],
+        "artifacts": [v for v in store.all_objects("artifact") if v.get("owner") == identity],
+        "receipts": [v for v in store.receipts() if audit or v["actor"] == identity],
+        "chain": store.verify_chain(),
+    }
 
 
 @router.post("/capsules")
@@ -175,7 +232,9 @@ def decision(approval_id: str, req: Decision, identity=Depends(principal)):
 @router.post("/packages/import")
 def import_package(req: ImportRequest, identity=Depends(principal)):
     require_demo_mode()
-    return packages.import_package(req.manifest, req.artifact, req.signature, identity, req.rollback_approval_id)
+    return packages.import_package(
+        req.manifest, req.artifact, req.signature, identity, req.rollback_approval_id
+    )
 
 
 @router.post("/packages/{package_id}/qualify")
@@ -200,9 +259,13 @@ def approve_package(package_id: str, req: ApprovalReference, identity=Depends(pr
 def hardware(package_id: str, identity=Depends(principal)):
     require_demo_mode()
     from aegis.hardware.simulation import HARDWARE_PROFILES
+
     manifest = store.require("package", package_id)["manifest"]
-    return {key: packages.compatibility(manifest, p["available_ram_mb"], p["gpu"]["vram_mb"])
-            for key, p in HARDWARE_PROFILES.items() if key != "REAL"}
+    return {
+        key: packages.compatibility(manifest, p["available_ram_mb"], p["gpu"]["vram_mb"])
+        for key, p in HARDWARE_PROFILES.items()
+        if key != "REAL"
+    }
 
 
 @router.post("/sources")
@@ -236,15 +299,29 @@ def classify_task(req: TaskRequest, identity=Depends(principal)):
     sources = [store.require("source", source_id) for source_id in req.source_ids]
     for source in sources:
         policy.authorize_label(identity, policy.label([source]))
-    binding = {"lease_id": req.lease_id, "capsule_id": req.capsule_id, "user": identity, "source_ids": sorted(req.source_ids)}
-    return {"classification": policy.classify(req.prompt, sources), "key_and_combined_approval_binding": binding,
-            "action_approval_binding": {**binding, "equipment": req.equipment, "action_hash": store.digest(req.prompt)}}
+    binding = {
+        "lease_id": req.lease_id,
+        "capsule_id": req.capsule_id,
+        "user": identity,
+        "source_ids": sorted(req.source_ids),
+    }
+    return {
+        "classification": policy.classify(req.prompt, sources),
+        "key_and_combined_approval_binding": binding,
+        "action_approval_binding": {
+            **binding,
+            "equipment": req.equipment,
+            "action_hash": store.digest(req.prompt),
+        },
+    }
 
 
 @router.post("/artifacts/{artifact_id}/export")
 def export(artifact_id: str, req: ExportRequest, identity=Depends(principal)):
     require_demo_mode()
-    return artifacts.export_artifact(artifact_id, identity, req.recipient, req.approval_id, req.restore)
+    return artifacts.export_artifact(
+        artifact_id, identity, req.recipient, req.approval_id, req.restore
+    )
 
 
 @router.post("/retention/sweep")
@@ -294,6 +371,7 @@ def run_demo(req: Scenario, identity=Depends(principal)):
 def self_test(identity=Depends(principal)):
     require_demo_mode()
     from aegis.control.self_test import run_self_test
+
     return run_self_test()
 
 
@@ -301,6 +379,7 @@ def self_test(identity=Depends(principal)):
 def update_versions(req: VersionPolicy, identity=Depends(principal)):
     require_demo_mode()
     from aegis.control.governance import version_policy
+
     return version_policy(req.family, req.minimum, req.revoked, req.approval_id, identity)
 
 
@@ -308,4 +387,5 @@ def update_versions(req: VersionPolicy, identity=Depends(principal)):
 def learning(req: LearningPlan, identity=Depends(principal)):
     require_demo_mode()
     from aegis.control.governance import learning_plan
+
     return learning_plan(req.model_dump(), identity)

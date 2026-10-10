@@ -1,12 +1,15 @@
 """
 Aegis Sovereign AI Runtime - Demo Model Profiles & Manifest Definitions
 """
+
 import hashlib
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 
 def compute_simulated_sha256(seed_str: str) -> str:
     """Generate deterministic SHA-256 hash for simulated packages."""
     return hashlib.sha256(seed_str.encode("utf-8")).hexdigest()
+
 
 DEMO_MODEL_PROFILES: List[Dict[str, Any]] = [
     {
@@ -29,8 +32,8 @@ DEMO_MODEL_PROFILES: List[Dict[str, Any]] = [
             "prompt_injection_robustness": "99.8%",
             "sop_factual_recall": "99.4%",
             "hallucination_rate": "0.4%",
-            "inference_latency_sim_ms": 142
-        }
+            "inference_latency_sim_ms": 142,
+        },
     },
     {
         "id": "AEGIS-DEMO-VISION",
@@ -39,7 +42,13 @@ DEMO_MODEL_PROFILES: List[Dict[str, Any]] = [
         "architecture": "Qwen3-VL-Multimodal-Sim",
         "parameters": "7B",
         "quantization": "Q4_K_S",
-        "capabilities": ["image analysis", "scanned document workflow", "P&ID workflow", "PaddleOCR", "StructureV3"],
+        "capabilities": [
+            "image analysis",
+            "scanned document workflow",
+            "P&ID workflow",
+            "PaddleOCR",
+            "StructureV3",
+        ],
         "license": "Apache-2.0",
         "sha256": compute_simulated_sha256("AEGIS-DEMO-VISION-MANIFEST-v2.1.0"),
         "status": "DEMO_QUALIFIED",
@@ -52,8 +61,8 @@ DEMO_MODEL_PROFILES: List[Dict[str, Any]] = [
             "pid_symbol_accuracy": "97.1%",
             "scanned_doc_ocr_fidelity": "98.9%",
             "injection_in_image_scan": "100%",
-            "inference_latency_sim_ms": 280
-        }
+            "inference_latency_sim_ms": 280,
+        },
     },
     {
         "id": "AEGIS-DEMO-CODE",
@@ -75,8 +84,8 @@ DEMO_MODEL_PROFILES: List[Dict[str, Any]] = [
             "math_calculation_accuracy": "100%",
             "safe_code_sandbox_execution": "100%",
             "syntax_validation_rate": "99.2%",
-            "inference_latency_sim_ms": 110
-        }
+            "inference_latency_sim_ms": 110,
+        },
     },
     {
         "id": "UNVERIFIED-EXPERIMENTAL-70B",
@@ -96,6 +105,6 @@ DEMO_MODEL_PROFILES: List[Dict[str, Any]] = [
         "shadow_agreement_score": None,
         "benchmark_summary": {
             "status": "Pending air-gapped security qualification and shadow verification."
-        }
-    }
+        },
+    },
 ]

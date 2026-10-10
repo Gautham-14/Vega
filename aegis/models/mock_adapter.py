@@ -3,17 +3,21 @@ Aegis Sovereign AI Runtime - Mock Model Adapter
 Deterministic, lightweight, CPU-only simulated model inference.
 Clearly labeled with SIMULATION MODE.
 """
-import time
-import math
+
 import hashlib
-from typing import Dict, Any, List
+import math
+import time
+from typing import Any, Dict, List
+
 from aegis.models.base import ModelAdapter, ModelRequest, ModelResponse
+
 
 class MockModelAdapter(ModelAdapter):
     """
     Deterministic Mock Model Adapter for Aegis Prototype.
     Simulates sovereign on-premise execution by acting as an mTLS API Broker.
     """
+
     def __init__(self, model_id: str = "AEGIS-DEMO-TEXT"):
         self.model_id = model_id
         self._enforce_mtls()
@@ -21,6 +25,7 @@ class MockModelAdapter(ModelAdapter):
     def _enforce_mtls(self):
         """Zero-Trust API Broker (mTLS & Network Pinning)"""
         import ssl
+
         self.ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         self.ssl_context.check_hostname = True
         self.ssl_context.verify_mode = ssl.CERT_REQUIRED
@@ -41,7 +46,7 @@ class MockModelAdapter(ModelAdapter):
                 "- Equipment Under Review: Slurry Feed Pump P-204 (Tag # P-204-A, Unit 02).\n"
                 "- Drive End (DE) Horizontal Bearing Vibration: Measured at 7.20 mm/s RMS.\n"
                 "- Non-Drive End (NDE) Bearing Vibration: Measured at 2.80 mm/s RMS (Nominal).\n"
-                "- Bearing Housing Temperature: 74.5Ã‚Â°C (Within acceptable thermal ceiling < 85Ã‚Â°C).\n\n"
+                "- Bearing Housing Temperature: 74.5°C (Within acceptable thermal ceiling < 85°C).\n\n"
                 "**2. Authoritative SOP Baseline Compliance:**\n"
                 "- Applicable SOP: Pump_SOP_Rev8 (Effective 2024-01, Authoritative & Approved).\n"
                 "- Permitted Limit for ISO 10816-3 Class II (Rigid Foundation, >15kW): 4.50 mm/s RMS.\n"
@@ -61,7 +66,7 @@ class MockModelAdapter(ModelAdapter):
                 "Rejected historical superseded SOPs (Rev2: 6.0 mm/s, Rev5: 5.2 mm/s).",
                 "Calculated vibration excursion ratio deterministically: 7.2 / 4.5 = 1.60x.",
                 "Separated verified empirical observations from diagnostic inferences.",
-                "Discarded ungrounded hallucination claims during evidence synthesis."
+                "Discarded ungrounded hallucination claims during evidence synthesis.",
             ]
         elif "code" in prompt_lower or "python" in prompt_lower or "calculate" in prompt_lower:
             response_text = (
@@ -87,7 +92,7 @@ class MockModelAdapter(ModelAdapter):
             reasoning = [
                 "Generated deterministic Python verification function.",
                 "Executed calculation within isolated simulated sandbox.",
-                "Output matches empirical math verification test."
+                "Output matches empirical math verification test.",
             ]
         elif "p&id" in prompt_lower or "vision" in prompt_lower or "scanned" in prompt_lower:
             response_text = (
@@ -102,7 +107,7 @@ class MockModelAdapter(ModelAdapter):
             reasoning = [
                 "Simulated vision-language engineering layout detection.",
                 "Mapped sensor tags to industrial topology graph.",
-                "No external OCR or cloud vision API invoked."
+                "No external OCR or cloud vision API invoked.",
             ]
         else:
             response_text = (
@@ -113,10 +118,12 @@ class MockModelAdapter(ModelAdapter):
             )
             reasoning = [
                 "Local sovereign simulation executed.",
-                "Zero external network calls made."
+                "Zero external network calls made.",
             ]
 
-        latency_ms = round((time.time() - start_time) * 1000 + 45.0, 2)  # realistic local CPU latency sim
+        latency_ms = round(
+            (time.time() - start_time) * 1000 + 45.0, 2
+        )  # realistic local CPU latency sim
         tokens = len(response_text.split())
 
         return ModelResponse(
@@ -126,7 +133,7 @@ class MockModelAdapter(ModelAdapter):
             latency_ms=latency_ms,
             is_simulation=True,
             reasoning_steps=reasoning,
-            metadata={"zero_egress": True, "backend": "MockModelAdapter"}
+            metadata={"zero_egress": True, "backend": "MockModelAdapter"},
         )
 
     def embed(self, text: str) -> List[float]:
@@ -154,5 +161,5 @@ class MockModelAdapter(ModelAdapter):
             "status": "HEALTHY",
             "runtime_mode": "SIMULATION",
             "is_local": True,
-            "memory_resident": True
+            "memory_resident": True,
         }

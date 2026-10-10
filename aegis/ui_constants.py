@@ -42,7 +42,7 @@ AEGIS_BANNER = """[info]
 ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝╚══════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   
 [/]"""
 
-AEGIS_LOGO_RICH = f"[info]{AEGIS_ASCII_LOGO}[/]"
+AEGIS_LOGO_RICH = "[info]" + AEGIS_ASCII_LOGO.strip("\n") + "[/]"
 
 AEGIS_INFO_PANEL = """[info]Security Ops[/]
 [dim]/lockdown, /validate, /receipts[/]

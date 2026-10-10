@@ -1,15 +1,17 @@
 """Portable startup contracts; native OS tests are explicitly marked."""
+
 import importlib.util
 import os
-from pathlib import Path
 import socket
 import subprocess
 import sys
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
-from scripts import runtime_support as support, start_offline, setup_offline
+from scripts import runtime_support as support
+from scripts import start_offline
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("aegis_entry_test", ROOT / "aegis.py")
@@ -17,7 +19,9 @@ entry = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(entry)
 
 
-@pytest.mark.parametrize("platform_name,suffix", [("nt", "Scripts/python.exe"), ("posix", "bin/python")])
+@pytest.mark.parametrize(
+    "platform_name,suffix", [("nt", "Scripts/python.exe"), ("posix", "bin/python")]
+)
 def test_interpreter_layout(tmp_path, platform_name, suffix):
     assert support.environment_python(tmp_path, platform_name) == tmp_path / ".venv" / suffix
 
@@ -50,7 +54,9 @@ def test_offline_children_drop_ambient_python_and_pip_configuration(monkeypatch)
     assert env["PIP_NO_INDEX"] == env["HF_HUB_OFFLINE"] == "1"
 
 
-def test_missing_environment_has_actionable_setup_and_never_falls_back(tmp_path, monkeypatch, capsys):
+def test_missing_environment_has_actionable_setup_and_never_falls_back(
+    tmp_path, monkeypatch, capsys
+):
     monkeypatch.setattr(entry, "ROOT", tmp_path)
     call = Mock(side_effect=AssertionError("No shared runtime fallback"))
     monkeypatch.setattr(entry.subprocess, "call", call)
@@ -83,7 +89,10 @@ def test_setup_without_paths_is_actionable_in_noninteractive_mode(monkeypatch, c
     assert "wheelhouse" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("arguments", [["--json", "doctor"], ["--url", "http://127.0.0.1:8001/api", "doctor"], ["--help"]])
+@pytest.mark.parametrize(
+    "arguments",
+    [["--json", "doctor"], ["--url", "http://127.0.0.1:8001/api", "doctor"], ["--help"]],
+)
 def test_cli_global_flags_forward_to_cli_parser(tmp_path, monkeypatch, arguments):
     python = support.environment_python(tmp_path)
     python.parent.mkdir(parents=True)
@@ -109,7 +118,12 @@ def test_setup_resolves_input_paths_before_changing_directory(monkeypatch):
     monkeypatch.setattr(entry.subprocess, "call", call)
     assert entry.main(["setup", "my wheels", "reviewed.sha256", "--profile", "media"]) == 0
     command = call.call_args.args[0]
-    assert command[-4:] == [os.path.abspath("my wheels"), os.path.abspath("reviewed.sha256"), "--profile", "media"]
+    assert command[-4:] == [
+        os.path.abspath("my wheels"),
+        os.path.abspath("reviewed.sha256"),
+        "--profile",
+        "media",
+    ]
 
 
 def test_busy_port_is_rejected_instead_of_attaching_to_another_service(monkeypatch):
@@ -128,17 +142,36 @@ def test_port_and_offline_mode_reach_both_child_processes(monkeypatch):
     monkeypatch.setenv("AEGIS_API_URL", "http://127.0.0.1:9999/api")
     monkeypatch.setenv("AEGIS_ENABLE_DEMO_ENDPOINTS", "1")
     server = Mock()
+    server.pid = 987654
     server.poll.return_value = None
     popen = Mock(return_value=server)
     call = Mock(return_value=0)
     monkeypatch.setattr(start_offline.subprocess, "Popen", popen)
     monkeypatch.setattr(start_offline.subprocess, "call", call)
+    cleanup = Mock()
+    monkeypatch.setattr(start_offline.subprocess, "run", cleanup)
     assert start_offline.main(["--port", "8123", "--plain"]) == 0
     for invocation in (popen.call_args, call.call_args):
         assert invocation.kwargs["env"]["AEGIS_API_URL"] == "http://127.0.0.1:8123/api"
         assert "AEGIS_ENABLE_DEMO_ENDPOINTS" not in invocation.kwargs["env"]
     assert call.call_args.args[0][-2:] == ["--plain", "shell"]
-    server.terminate.assert_called_once()
+    if os.name == "nt":
+        cleanup.assert_called_once_with(
+            [
+                str(Path(os.environ["SystemRoot"]) / "System32" / "taskkill.exe"),
+                "/PID",
+                str(server.pid),
+                "/T",
+                "/F",
+            ],
+            capture_output=True,
+            check=False,
+        )
+        server.terminate.assert_not_called()
+    else:
+        cleanup.assert_not_called()
+        server.terminate.assert_called_once()
+    server.wait.assert_called_once()
 
 
 def test_interrupted_session_reaps_owned_server(monkeypatch):
@@ -146,16 +179,26 @@ def test_interrupted_session_reaps_owned_server(monkeypatch):
     monkeypatch.setattr(start_offline, "require_free_port", lambda: None)
     monkeypatch.setattr(start_offline, "wait_for_server", lambda process: None)
     server = Mock()
+    server.pid = 987654
     server.poll.return_value = None
     monkeypatch.setattr(start_offline.subprocess, "Popen", Mock(return_value=server))
     monkeypatch.setattr(start_offline.subprocess, "call", Mock(side_effect=KeyboardInterrupt))
+    cleanup = Mock()
+    monkeypatch.setattr(start_offline.subprocess, "run", cleanup)
     assert start_offline.main([]) == 130
-    server.terminate.assert_called_once()
+    if os.name == "nt":
+        cleanup.assert_called_once()
+        assert cleanup.call_args.args[0][-4:] == ["/PID", str(server.pid), "/T", "/F"]
+        server.terminate.assert_not_called()
+    else:
+        cleanup.assert_not_called()
+        server.terminate.assert_called_once()
     server.wait.assert_called_once()
 
 
 def test_unavailable_cpu_frequency_does_not_break_non_windows_hardware(monkeypatch):
     from aegis.hardware import detector
+
     monkeypatch.setattr(detector.psutil, "cpu_freq", Mock(side_effect=NotImplementedError))
     assert detector.detect_hardware()["cpu_frequency_mhz"] is None
 
@@ -175,18 +218,40 @@ assert len(store.secret()) == 32
 assert stat.S_IMODE(config.DATA_DIR.stat().st_mode) == 0o700
 assert stat.S_IMODE((config.DATA_DIR / 'control.key').stat().st_mode) == 0o600
 """
-    subprocess.run([sys.executable, "-c", program], cwd=ROOT, env=env, check=True, capture_output=True, text=True)
+    subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows batch wrapper")
 def test_windows_wrapper_help_and_exit_code():
     command = ROOT / "Aegis.bat"
-    if not any(path.is_file() for path in (ROOT / ".runtime" / "python" / "python.exe",
-                                           ROOT / ".venv" / "Scripts" / "python.exe")):
+    if not any(
+        path.is_file()
+        for path in (
+            ROOT / ".runtime" / "python" / "python.exe",
+            ROOT / ".venv" / "Scripts" / "python.exe",
+        )
+    ):
         pytest.skip("Local reviewed bootstrap or dedicated interpreter is not available")
-    result = subprocess.run(["cmd", "/c", str(command), "--help"], cwd=ROOT.parent,
-                            capture_output=True, text=True, timeout=15)
+    result = subprocess.run(
+        ["cmd", "/c", str(command), "--help"],
+        cwd=ROOT.parent,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
     assert result.returncode == 0 and "macOS" in result.stdout
-    result = subprocess.run(["cmd", "/c", str(command), "not-a-command"], cwd=ROOT.parent,
-                            capture_output=True, text=True, timeout=15)
+    result = subprocess.run(
+        ["cmd", "/c", str(command), "not-a-command"],
+        cwd=ROOT.parent,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
     assert result.returncode == 2

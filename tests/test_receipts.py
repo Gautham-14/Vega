@@ -1,14 +1,18 @@
 """
 Tests for Aegis Sovereignty Receipts and Verification
 """
+
 import pytest
-from aegis.storage.database import init_db
-from aegis.receipts.generator import generate_sovereignty_receipt, get_all_receipts
+
+from aegis.receipts.generator import generate_sovereignty_receipt
 from aegis.receipts.verifier import verify_receipt
+from aegis.storage.database import init_db
+
 
 @pytest.fixture(autouse=True)
 def setup_db():
     init_db()
+
 
 def test_receipt_generation_and_verification():
     task_record = {
@@ -21,9 +25,20 @@ def test_receipt_generation_and_verification():
         "authoritative_sop": "Pump_SOP_Rev8.txt",
         "rejected_sops": [{"filename": "Pump_SOP_Rev2.txt", "reason": "SUPERSEDED"}],
         "blocked_contexts": [],
-        "claims_stats": {"verified": 4, "calculated": 1, "inferred": 1, "unsupported": 1, "blocked_from_output": 1},
-        "zero_egress_metrics": {"external_dns_queries": 0, "external_http_requests": 0, "external_api_calls": 0, "egress_bytes": 0},
-        "result_artifact": "Pump_Note.md"
+        "claims_stats": {
+            "verified": 4,
+            "calculated": 1,
+            "inferred": 1,
+            "unsupported": 1,
+            "blocked_from_output": 1,
+        },
+        "zero_egress_metrics": {
+            "external_dns_queries": 0,
+            "external_http_requests": 0,
+            "external_api_calls": 0,
+            "egress_bytes": 0,
+        },
+        "result_artifact": "Pump_Note.md",
     }
     deliverable_text = "# ENGINEERING NOTE: Pump P-204 Verified Findings"
 

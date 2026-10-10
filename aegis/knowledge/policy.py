@@ -1,4 +1,5 @@
 """Shared, fail-closed document policy for retrieval and task mounting."""
+
 from datetime import date
 
 CLEARANCES = {"INTERNAL": 1, "RESTRICTED": 2, "CONFIDENTIAL": 3}

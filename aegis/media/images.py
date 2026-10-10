@@ -1,4 +1,5 @@
 """Decode actual local image bytes, enforce limits, and remove ancillary metadata."""
+
 import base64
 import binascii
 import hashlib
@@ -23,13 +24,20 @@ def sanitize(encoded):
     try:
         from PIL import Image, ImageOps
     except ImportError:
-        raise ValueError("Image decoding requires the local Pillow dependency; install requirements-media.txt") from None
+        raise ValueError(
+            "Image decoding requires the local Pillow dependency; install requirements-media.txt"
+        ) from None
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
             with Image.open(io.BytesIO(raw), formats=["PNG", "JPEG", "WEBP"]) as source:
                 width, height = source.size
-                if width < 1 or height < 1 or width * height > MAX_PIXELS or getattr(source, "n_frames", 1) != 1:
+                if (
+                    width < 1
+                    or height < 1
+                    or width * height > MAX_PIXELS
+                    or getattr(source, "n_frames", 1) != 1
+                ):
                     raise ValueError("Image exceeds pixel limits or contains animation")
                 source.verify()
             with Image.open(io.BytesIO(raw), formats=["PNG", "JPEG", "WEBP"]) as source:
@@ -47,12 +55,24 @@ def sanitize(encoded):
                 rgb.close()
                 rgba.close()
                 oriented.close()
-    except (OSError, ValueError, SyntaxError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+    except (
+        OSError,
+        ValueError,
+        SyntaxError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+    ):
         raise ValueError("Image is malformed, animated or exceeds decoding limits") from None
     if len(value) > MAX_IMAGE_BYTES:
         raise ValueError("Decoded PNG exceeds 2 MB; provide a smaller image")
-    return {"data": base64.b64encode(value).decode("ascii"), "mime_type": "image/png",
-            "sha256": hashlib.sha256(value).hexdigest(), "bytes": len(value), "width": width, "height": height}
+    return {
+        "data": base64.b64encode(value).decode("ascii"),
+        "mime_type": "image/png",
+        "sha256": hashlib.sha256(value).hexdigest(),
+        "bytes": len(value),
+        "width": width,
+        "height": height,
+    }
 
 
 def metadata(image):

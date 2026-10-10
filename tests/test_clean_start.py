@@ -9,8 +9,12 @@ def test_fresh_workspace_has_no_seeded_data(monkeypatch):
     monkeypatch.delenv("AEGIS_ENABLE_DEMO_ENDPOINTS", raising=False)
     with TestClient(app) as client:
         from aegis.security.auth import provision
+
         provision("security-officer", "test-only-password-123")
-        client.post("/api/auth/login", json={"username": "security-officer", "password": "test-only-password-123"})
+        client.post(
+            "/api/auth/login",
+            json={"username": "security-officer", "password": "test-only-password-123"},
+        )
         status = client.get("/api/dashboard/status").json()
         assert status["registered_models"] == 0
         assert status["registered_documents"] == 0

@@ -1,10 +1,11 @@
 """
 Aegis Runtime Package
 """
-from aegis.runtime.enclave import EphemeralEnclave
+
 from aegis.runtime.egress import ZeroEgressMonitor
+from aegis.runtime.enclave import EphemeralEnclave
+from aegis.runtime.evidence_gate import Claim, ClaimState, EvidenceGate
 from aegis.runtime.router import ModelRouter
-from aegis.runtime.evidence_gate import EvidenceGate, Claim, ClaimState
 from aegis.runtime.task_runner import TaskRunner, get_all_tasks, get_task_by_id
 
 __all__ = [
@@ -16,5 +17,5 @@ __all__ = [
     "ClaimState",
     "TaskRunner",
     "get_all_tasks",
-    "get_task_by_id"
+    "get_task_by_id",
 ]

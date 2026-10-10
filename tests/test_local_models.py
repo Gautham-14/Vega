@@ -1,10 +1,12 @@
 """Model-native tokenization, bounded embeddings and honest memory estimates."""
+
 import hashlib
 import json
 import math
 from unittest.mock import Mock
 
 import pytest
+
 from aegis.coding import embedding, providers, retrieval, tokenizer
 from aegis.control import store
 from aegis.hardware.capacity import estimate
@@ -23,8 +25,14 @@ def test_native_tokenizer_roundtrip_and_stable_ids(tmp_path):
     native.pre_tokenizer = tokenizers.pre_tokenizers.ByteLevel(add_prefix_space=False)
     native.decoder = tokenizers.decoders.ByteLevel()
     text = "Hello नमस्ते 世界 café 👩🏽‍💻\n<|custom|>"
-    native.train_from_iterator([text], tokenizers.trainers.BpeTrainer(vocab_size=300,
-        initial_alphabet=tokenizers.pre_tokenizers.ByteLevel.alphabet(), special_tokens=["<|custom|>"]))
+    native.train_from_iterator(
+        [text],
+        tokenizers.trainers.BpeTrainer(
+            vocab_size=300,
+            initial_alphabet=tokenizers.pre_tokenizers.ByteLevel.alphabet(),
+            special_tokens=["<|custom|>"],
+        ),
+    )
     native.enable_truncation(max_length=1)
     path = tmp_path / "tokenizer.json"
     native.save(str(path))
@@ -41,7 +49,9 @@ def test_native_tokenizer_roundtrip_and_stable_ids(tmp_path):
         tokenizer.LocalModelTokenizer(str(path), "f" * 64)
 
 
-@pytest.mark.parametrize("path", ["Qwen/model", "https://models.invalid/tokenizer.json", "//host/models/tokenizer.json"])
+@pytest.mark.parametrize(
+    "path", ["Qwen/model", "https://models.invalid/tokenizer.json", "//host/models/tokenizer.json"]
+)
 def test_tokenizer_never_fetches_remote_or_relative_paths(path):
     with pytest.raises(ValueError):
         tokenizer.LocalModelTokenizer(path, "a" * 64)
@@ -49,7 +59,9 @@ def test_tokenizer_never_fetches_remote_or_relative_paths(path):
 
 def local_embedding(tmp_path, monkeypatch, rows, **kwargs):
     (tmp_path / "model.safetensors").write_bytes(b"test-fixture-weights")
-    (tmp_path / "modules.json").write_text(json.dumps([{"type": "sentence_transformers.models.Transformer", "path": ""}]))
+    (tmp_path / "modules.json").write_text(
+        json.dumps([{"type": "sentence_transformers.models.Transformer", "path": ""}])
+    )
     digest = retrieval.model_digest(str(tmp_path))
     model = Mock(max_seq_length=512)
     model.encode.return_value.tolist.return_value = rows
@@ -72,12 +84,25 @@ def test_embedding_requires_reviewed_model_for_truncation(tmp_path, monkeypatch)
 
 
 def test_reviewed_matryoshka_dimension_normalizes(tmp_path, monkeypatch):
-    system, _ = local_embedding(tmp_path, monkeypatch, [[3.0, 4.0, 8.0]], matryoshka_dimensions=(2,))
+    system, _ = local_embedding(
+        tmp_path, monkeypatch, [[3.0, 4.0, 8.0]], matryoshka_dimensions=(2,)
+    )
     assert system.encode(["text"], dimensions=2) == [[0.6, 0.8]]
 
 
-@pytest.mark.parametrize("rows", [[], [[0.0, 0.0]], [[float("nan")]], [[float("inf")]], [[True]],
-                                  [[1.0], [1.0, 2.0]], [["secret"]], [[1e308, 1e308, 1e308, 1e308]]])
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [],
+        [[0.0, 0.0]],
+        [[float("nan")]],
+        [[float("inf")]],
+        [[True]],
+        [[1.0], [1.0, 2.0]],
+        [["secret"]],
+        [[1e308, 1e308, 1e308, 1e308]],
+    ],
+)
 def test_embedding_rejects_invalid_vectors(tmp_path, monkeypatch, rows):
     system, _ = local_embedding(tmp_path, monkeypatch, rows)
     with pytest.raises(ValueError):
@@ -101,7 +126,11 @@ def test_embedding_direct_loader_rejects_custom_modules(tmp_path):
 
 def test_external_provider_switch_cannot_bypass_loopback(monkeypatch):
     monkeypatch.setenv("AEGIS_ALLOW_EXTERNAL_LLM", "1")
-    for endpoint in ["https://api.openai.com/v1", "http://openrouter.ai/api", "https://user:pass@generativelanguage.googleapis.com"]:
+    for endpoint in [
+        "https://api.openai.com/v1",
+        "http://openrouter.ai/api",
+        "https://user:pass@generativelanguage.googleapis.com",
+    ]:
         with pytest.raises(ValueError):
             providers.loopback_endpoint(endpoint, "openai-compatible")
 

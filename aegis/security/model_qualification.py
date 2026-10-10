@@ -1,7 +1,6 @@
 """Bounded, local text-model candidate evaluation; never grants approval."""
 
 import hashlib
-import hmac
 import time
 from typing import Literal
 
@@ -46,30 +45,59 @@ def _text_response(spec, prompt):
     providers.check_context(spec, [{"role": "user", "content": prompt}])
     providers.check_model(spec, providers.model_listing(spec))
     if spec.get("protocol", "ollama") == "openai-compatible":
-        result = providers.request_json("/v1/chat/completions", {
-            "model": spec["model"], "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0, "stream": False, "max_tokens": min(spec["max_tokens"], 1024),
-        }, spec=spec)
+        result = providers.request_json(
+            "/v1/chat/completions",
+            {
+                "model": spec["model"],
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0,
+                "stream": False,
+                "max_tokens": min(spec["max_tokens"], 1024),
+            },
+            spec=spec,
+        )
         choices = result.get("choices")
-        if (result.get("model") != spec["model"] or not isinstance(choices, list) or len(choices) != 1
-                or not isinstance(choices[0], dict) or choices[0].get("finish_reason") != "stop"):
+        if (
+            result.get("model") != spec["model"]
+            or not isinstance(choices, list)
+            or len(choices) != 1
+            or not isinstance(choices[0], dict)
+            or choices[0].get("finish_reason") != "stop"
+        ):
             raise ValueError("Incomplete or mismatched local model response")
         message = choices[0].get("message")
         content = message.get("content") if isinstance(message, dict) else None
     else:
-        result = providers.request_json("/api/chat", {
-            "model": spec["model"], "messages": [{"role": "user", "content": prompt}],
-            "stream": False, "keep_alive": 0,
-            "options": {"temperature": 0, "num_predict": min(spec.get("max_tokens", 1024), 1024),
-                        "num_ctx": spec.get("context_tokens", 16384)},
-        }, spec=spec)
-        if result.get("model") != spec["model"] or result.get("done") is not True or result.get("done_reason") == "length":
+        result = providers.request_json(
+            "/api/chat",
+            {
+                "model": spec["model"],
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "keep_alive": 0,
+                "options": {
+                    "temperature": 0,
+                    "num_predict": min(spec.get("max_tokens", 1024), 1024),
+                    "num_ctx": spec.get("context_tokens", 16384),
+                },
+            },
+            spec=spec,
+        )
+        if (
+            result.get("model") != spec["model"]
+            or result.get("done") is not True
+            or result.get("done_reason") == "length"
+        ):
             raise ValueError("Incomplete or mismatched local model response")
         message = result.get("message")
         content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, str) or not 1 <= len(content) <= 20_000:
         raise ValueError("Qualification output is empty or too large")
-    if message.get("tool_calls") or message.get("refusal") or message.get("role", "assistant") != "assistant":
+    if (
+        message.get("tool_calls")
+        or message.get("refusal")
+        or message.get("role", "assistant") != "assistant"
+    ):
         raise ValueError("Qualification response is not a plain assistant completion")
     return content
 
@@ -81,7 +109,10 @@ def run_candidate_suite(provider_id: str, suite: dict, identity: str) -> dict:
     suite = QualificationSuite.model_validate(suite)
     spec = providers.specification(provider_id)
     if provider_id == "reference" or spec.get("protocol") == "sd-webui":
-        raise store.Denied("QUALIFICATION_CAPABILITY_MISMATCH", "This preliminary suite supports live text providers only")
+        raise store.Denied(
+            "QUALIFICATION_CAPABILITY_MISMATCH",
+            "This preliminary suite supports live text providers only",
+        )
     suite_hash = store.digest(suite.model_dump())
     results = []
     for case in suite.cases:
@@ -93,25 +124,47 @@ def run_candidate_suite(provider_id: str, suite: dict, identity: str) -> dict:
         observed = output.casefold()
         missing = [value for value in case.required_text if value.casefold() not in observed]
         forbidden = [value for value in case.forbidden_text if value.casefold() in observed]
-        results.append({"id": case.id, "passed": not missing and not forbidden and latency <= case.max_latency_ms,
-                        "missing_required": len(missing), "forbidden_found": len(forbidden),
-                        "latency_ms": latency, "output_sha256": hashlib.sha256(output.encode()).hexdigest()})
-    result = {"id": store.uid("QUAL"), "status": "CANDIDATE_TESTED_NOT_APPROVED", "provider": provider_id,
-              "model": spec["model"], "suite_sha256": suite_hash, "case_count": len(results),
-              "passed": sum(item["passed"] for item in results), "results": results,
-              "provider_configuration_sha256": providers.configuration_hash(spec),
-              "created_at": time.time(),
-              "raw_outputs_retained": False, "independent_review_completed": False,
-              "runtime_binding_verified": False, "network_isolation_verified": False,
-              "production_eligible": False}
+        results.append(
+            {
+                "id": case.id,
+                "passed": not missing and not forbidden and latency <= case.max_latency_ms,
+                "missing_required": len(missing),
+                "forbidden_found": len(forbidden),
+                "latency_ms": latency,
+                "output_sha256": hashlib.sha256(output.encode()).hexdigest(),
+            }
+        )
+    result = {
+        "id": store.uid("QUAL"),
+        "status": "CANDIDATE_TESTED_NOT_APPROVED",
+        "provider": provider_id,
+        "model": spec["model"],
+        "suite_sha256": suite_hash,
+        "case_count": len(results),
+        "passed": sum(item["passed"] for item in results),
+        "results": results,
+        "provider_configuration_sha256": providers.configuration_hash(spec),
+        "created_at": time.time(),
+        "raw_outputs_retained": False,
+        "independent_review_completed": False,
+        "runtime_binding_verified": False,
+        "network_isolation_verified": False,
+        "production_eligible": False,
+    }
     with store.LOCK:
         lockdown.check(generation)
         sealed = {**result, "seal": store.sign(result, "provider-qualification-v1")}
         store.put("provider-qualification", result["id"], sealed)
-        store.receipt("MODEL_CANDIDATE_EVALUATED", identity, provider_id=provider_id,
-                      qualification_id=result["id"],
-                      suite_sha256=suite_hash, passed=result["passed"], case_count=len(results),
-                      production_eligible=False)
+        store.receipt(
+            "MODEL_CANDIDATE_EVALUATED",
+            identity,
+            provider_id=provider_id,
+            qualification_id=result["id"],
+            suite_sha256=suite_hash,
+            passed=result["passed"],
+            case_count=len(results),
+            production_eligible=False,
+        )
     return result
 
 
@@ -119,9 +172,12 @@ def qualification(qualification_id: str) -> dict:
     """Return a sealed qualification summary without any model response text."""
     value = store.require("provider-qualification", qualification_id)
     body = {key: item for key, item in value.items() if key != "seal"}
-    if (not isinstance(value.get("seal"), str)
-            or not store.verify_signature(body, "provider-qualification-v1", value["seal"])):
-        raise store.Denied("QUALIFICATION_INTEGRITY_FAILURE", "Qualification record was modified", qualification_id)
+    if not isinstance(value.get("seal"), str) or not store.verify_signature(
+        body, "provider-qualification-v1", value["seal"]
+    ):
+        raise store.Denied(
+            "QUALIFICATION_INTEGRITY_FAILURE", "Qualification record was modified", qualification_id
+        )
     return body
 
 

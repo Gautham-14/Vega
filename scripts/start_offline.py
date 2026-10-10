@@ -1,19 +1,20 @@
 """Run the loopback Aegis service and operator CLI as one local session."""
 
-import http.client
 import argparse
+import http.client
 import json
 import os
-from pathlib import Path
 import socket
 import subprocess
 import sys
 import time
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from scripts.runtime_support import require_environment as check_environment, offline_environment
+from scripts.runtime_support import offline_environment
+from scripts.runtime_support import require_environment as check_environment
+
 HOST = "127.0.0.1"
 PORT = 8000
 
@@ -27,7 +28,9 @@ def require_free_port() -> None:
         try:
             listener.bind((HOST, PORT))
         except OSError:
-            raise RuntimeError(f"Port {PORT} is busy. Close the existing Aegis session or use start --port <unused-port>.") from None
+            raise RuntimeError(
+                f"Port {PORT} is busy. Close the existing Aegis session or use start --port <unused-port>."
+            ) from None
 
 
 def wait_for_server(process: subprocess.Popen) -> None:
@@ -68,11 +71,27 @@ def main(argv=None) -> int:
         # Start in real-account mode; demonstration must be explicitly launched separately.
         env.pop("AEGIS_ENABLE_DEMO_ENDPOINTS", None)
         print("Starting Aegis locally...", flush=True)
-        server = subprocess.Popen([sys.executable, "-I", str(ROOT / "run_aegis.py"), "--host", HOST,
-                                   "--port", str(PORT), "--quiet"], cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
-                                  start_new_session=os.name != "nt")
+        server = subprocess.Popen(
+            [
+                sys.executable,
+                "-I",
+                str(ROOT / "run_aegis.py"),
+                "--host",
+                HOST,
+                "--port",
+                str(PORT),
+                "--quiet",
+            ],
+            cwd=ROOT,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            start_new_session=os.name != "nt",
+        )
         wait_for_server(server)
-        print(f"Ready. Local API: http://{HOST}:{PORT} | /help for guidance | /exit stops this session.", flush=True)
+        print(
+            f"Ready. Local API: http://{HOST}:{PORT} | /help for guidance | /exit stops this session.",
+            flush=True,
+        )
         command = [sys.executable, "-I", str(ROOT / "scripts" / "run_cli.py")]
         if args.plain:
             command.append("--plain")
@@ -85,12 +104,23 @@ def main(argv=None) -> int:
         return 130
     finally:
         if server is not None and server.poll() is None:
-            server.terminate()
-            try:
-                server.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                server.kill()
-                server.wait()
+            if os.name == "nt":
+                # The venv launcher spawns a Python child, which owns the model
+                # router and its children. Stop only this session's entire tree.
+                taskkill = Path(os.environ["SystemRoot"]) / "System32" / "taskkill.exe"
+                subprocess.run(
+                    [str(taskkill), "/PID", str(server.pid), "/T", "/F"],
+                    capture_output=True,
+                    check=False,
+                )
+                server.wait(timeout=10)
+            else:
+                server.terminate()
+                try:
+                    server.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    server.kill()
+                    server.wait()
 
 
 if __name__ == "__main__":

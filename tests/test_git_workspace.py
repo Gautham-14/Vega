@@ -1,13 +1,11 @@
-import os
-from pathlib import Path
 import shutil
 
 import pytest
 
 from aegis import config
-from aegis.coding.git_workspace import Workspace, WorkspaceError
 from aegis.coding import service
-from aegis.control import store, capsules, policy
+from aegis.coding.git_workspace import Workspace, WorkspaceError
+from aegis.control import capsules, policy, store
 from aegis.storage.database import init_db
 
 pytestmark = pytest.mark.skipif(not shutil.which("git"), reason="Git is not installed")
@@ -16,9 +14,15 @@ pytestmark = pytest.mark.skipif(not shutil.which("git"), reason="Git is not inst
 def test_isolated_worktree_checkpoint_revert_and_cleanup(monkeypatch, tmp_path):
     # Inherited attacker-controlled Git configuration must not run in the new repo.
     poison = tmp_path / "gitconfig"
-    poison.write_text('[core]\n hooksPath = /untrusted/hooks\n[commit]\n gpgsign = true\n', encoding="utf-8")
+    poison.write_text(
+        "[core]\n hooksPath = /untrusted/hooks\n[commit]\n gpgsign = true\n", encoding="utf-8"
+    )
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(poison))
-    original = {"src/main.py": "value = 1\n", ".gitignore": "*.py\n", ".gitattributes": "*.py filter=evil\n"}
+    original = {
+        "src/main.py": "value = 1\n",
+        ".gitignore": "*.py\n",
+        ".gitattributes": "*.py filter=evil\n",
+    }
     with Workspace(original) as workspace:
         root = workspace._root
         baseline = workspace.checkpoint()
@@ -42,12 +46,16 @@ def test_reviewed_apply_records_and_cleans_git_checkpoint(monkeypatch):
     monkeypatch.setenv("AEGIS_GIT_WORKTREES", "1")
     init_db()
     store.init_control()
-    repo = service.add_repository("Port fixture", service.DEMO_FILES, "Engineering", "INTERNAL", "data-owner")
+    repo = service.add_repository(
+        "Port fixture", service.DEMO_FILES, "Engineering", "INTERNAL", "data-owner"
+    )
     stack = service.register_capsule("reference", "operator")
     for actor in ("model-custodian", "security-officer"):
         policy.decide(stack["approval"]["id"], actor, "APPROVE")
     capsules.approve(stack["capsule"]["id"], stack["approval"]["id"], "model-custodian")
-    lease = service.issue_lease(repo["id"], stack["capsule"]["id"], "operator", "EXECUTE", 15, False, "data-owner")
+    lease = service.issue_lease(
+        repo["id"], stack["capsule"]["id"], "operator", "EXECUTE", 15, False, "data-owner"
+    )
     task = service.run(lease["id"], "Fix valid_port", lease["purpose"], "operator")
     applied = service.apply(task["id"], task["diff_hash"], "operator")
     assert applied["git_checkpoint"]["worktree"] == "DESTROYED"

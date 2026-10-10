@@ -1,5 +1,22 @@
 # Deployment acceptance gates
 
+Current status (10 October 2026): **NOT ACCEPTED on production infrastructure**.
+Local work uses Windows/Python 3.14.7. Linux separate-UID custody, actual sandbox
+isolation, independent provider attestation, intended CPU/GPU behavior and
+domain model quality have not been verified on the deployment hardware.
+Separate synthetic PUBLIC inference was explicitly authorized and performed with
+the owner's local models; no additional weights were downloaded. The 12-case
+probe selected the expected model in every case but passed only 7 narrow answer
+checks. This is not domain/hardware/provider qualification and does not fill the
+production acceptance gaps; see LOCAL_MODELS.md.
+The owner selected an isolated VM backend on Windows, macOS and Linux hosts but
+explicitly declined VM installation/acceptance tests on this device. Before
+later authorized acceptance, the owner must supply the intended host and
+reviewed hypervisor/firmware/provisioned Linux guest inventory,
+reviewed provider/model inventories, deployment-specific quality targets,
+independent reviewer identities and permission to run the explicit acceptance
+commands below. A passing source release gate does not complete point 22.
+
 Use this record when the intended local models and deployment hardware are
 available. Nothing here authorizes automatic model downloads or starts inference.
 Configuration-only `provider-preflight` remains safe to run without models.

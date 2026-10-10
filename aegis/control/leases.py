@@ -1,51 +1,119 @@
 """Signed purpose leases. All dimensions are checked again before export."""
-import hmac
-import time
-from aegis.control.store import verify_signature, Denied, uid, sign, put, require, receipt, LOCK
-from aegis.control.policy import actor, authorize_label, SKILLS
 
-FIELDS = {"source_ids", "compartments", "purpose", "capsule_id", "skill", "user", "role", "expires_at",
-          "allow_export", "allow_persistent_memory", "allow_training", "output_type", "recipient"}
+import time
+
+from aegis.control.policy import SKILLS, actor, authorize_label
+from aegis.control.store import (
+    LOCK,
+    Denied,
+    put,
+    receipt,
+    require,
+    sign,
+    uid,
+    verify_signature,
+)
+
+FIELDS = {
+    "source_ids",
+    "compartments",
+    "purpose",
+    "capsule_id",
+    "skill",
+    "user",
+    "role",
+    "expires_at",
+    "allow_export",
+    "allow_persistent_memory",
+    "allow_training",
+    "output_type",
+    "recipient",
+}
 
 
 def issue(spec, issuer):
     actor(issuer, ["Data Owner"])
     from aegis.security import lockdown
+
     generation = lockdown.check()
     if set(spec) != FIELDS:
         raise ValueError("Lease fields are incomplete or unknown")
     principal = actor(spec["user"])
-    if principal["role"] != spec["role"] or not time.time() < spec["expires_at"] <= time.time() + 86400:
+    if (
+        principal["role"] != spec["role"]
+        or not time.time() < spec["expires_at"] <= time.time() + 86400
+    ):
         raise ValueError("Lease role or expiry is invalid (maximum 24 hours)")
     if spec["allow_training"] or spec["allow_persistent_memory"]:
         raise Denied("LEARNING_DISABLED", "Training and persistent chat memory are disabled")
     capsule = require("capsule", spec["capsule_id"])
     skill = SKILLS.get(spec["skill"])
-    if (capsule["status"] != "APPROVED" or not skill or spec["purpose"] not in skill["purposes"]
-            or spec["output_type"] not in skill["output_types"] or not spec["source_ids"]):
+    if (
+        capsule["status"] != "APPROVED"
+        or not skill
+        or spec["purpose"] not in skill["purposes"]
+        or spec["output_type"] not in skill["output_types"]
+        or not spec["source_ids"]
+    ):
         raise Denied("INVALID_LEASE", "Capsule, purpose, skill, sources or output is not approved")
     compartments = set()
     for source_id in spec["source_ids"]:
         document = require("source", source_id)
-        authorize_label(spec["user"], {"compartments": [document["compartment"]], "classification": document["classification"]})
-        if spec["skill"] not in document["permitted_skills"] or document["compartment"] not in skill["compartments"]:
+        authorize_label(
+            spec["user"],
+            {
+                "compartments": [document["compartment"]],
+                "classification": document["classification"],
+            },
+        )
+        if (
+            spec["skill"] not in document["permitted_skills"]
+            or document["compartment"] not in skill["compartments"]
+        ):
             raise Denied("INVALID_LEASE", "Skill cannot use this source", source_id)
         compartments.add(document["compartment"])
     if compartments != set(spec["compartments"]):
         raise Denied("COMPARTMENT_VIOLATION", "Lease compartments must match its sources")
     actor(spec["recipient"])
-    value = {"id": uid("LEASE"), "issuer": issuer, "issued_at": time.time(), **spec, "lockdown_generation": generation}
+    value = {
+        "id": uid("LEASE"),
+        "issuer": issuer,
+        "issued_at": time.time(),
+        **spec,
+        "lockdown_generation": generation,
+    }
     value["signature"] = sign(value, "purpose-lease")
     put("lease", value["id"], value)
-    receipt("LEASE_ISSUED", issuer, lease_id=value["id"], user=spec["user"], purpose=spec["purpose"],
-            capsule_id=spec["capsule_id"], source_ids=spec["source_ids"])
+    receipt(
+        "LEASE_ISSUED",
+        issuer,
+        lease_id=value["id"],
+        user=spec["user"],
+        purpose=spec["purpose"],
+        capsule_id=spec["capsule_id"],
+        source_ids=spec["source_ids"],
+    )
     return value
 
 
-def validate(lease_id, *, user, capsule_id, skill, purpose, source_ids, compartments, output_type,
-             export=False, recipient=None, training=False, persistent_memory=False):
+def validate(
+    lease_id,
+    *,
+    user,
+    capsule_id,
+    skill,
+    purpose,
+    source_ids,
+    compartments,
+    output_type,
+    export=False,
+    recipient=None,
+    training=False,
+    persistent_memory=False,
+):
     value = require("lease", lease_id)
     from aegis.security import lockdown
+
     lockdown.check(value.get("lockdown_generation", 0))
     body = {k: v for k, v in value.items() if k != "signature"}
     if not verify_signature(body, "purpose-lease", value["signature"]):
@@ -53,20 +121,39 @@ def validate(lease_id, *, user, capsule_id, skill, purpose, source_ids, compartm
     if value["expires_at"] <= time.time():
         raise Denied("EXPIRED_PURPOSE_LEASE", "Purpose lease has expired", lease_id)
     from aegis.security.revocation import revoked
+
     if revoked("lease", lease_id):
         raise Denied("REVOKED_PURPOSE_LEASE", "Purpose lease was revoked", lease_id)
-    expected = {"user": user, "role": actor(user)["role"], "capsule_id": capsule_id,
-                "skill": skill, "purpose": purpose, "output_type": output_type}
+    expected = {
+        "user": user,
+        "role": actor(user)["role"],
+        "capsule_id": capsule_id,
+        "skill": skill,
+        "purpose": purpose,
+        "output_type": output_type,
+    }
     if any(value[k] != v for k, v in expected.items()):
-        raise Denied("PURPOSE_LEASE_MISMATCH", "Purpose, Capsule, skill, identity or output does not match", lease_id)
-    if not set(source_ids).issubset(value["source_ids"]) or not set(compartments).issubset(value["compartments"]):
+        raise Denied(
+            "PURPOSE_LEASE_MISMATCH",
+            "Purpose, Capsule, skill, identity or output does not match",
+            lease_id,
+        )
+    if not set(source_ids).issubset(value["source_ids"]) or not set(compartments).issubset(
+        value["compartments"]
+    ):
         raise Denied("COMPARTMENT_VIOLATION", "Requested data is outside the lease", lease_id)
     from aegis.control.data import source_current
+
     for source_id in source_ids:
         source = require("source", source_id)
-        authorize_label(user, {"compartments": [source["compartment"]], "classification": source["classification"]})
+        authorize_label(
+            user,
+            {"compartments": [source["compartment"]], "classification": source["classification"]},
+        )
         source_current(source, skill, source["equipment"])
-    if (training and not value["allow_training"]) or (persistent_memory and not value["allow_persistent_memory"]):
+    if (training and not value["allow_training"]) or (
+        persistent_memory and not value["allow_persistent_memory"]
+    ):
         raise Denied("LEARNING_DISABLED", "Lease denies learning or persistent memory", lease_id)
     if export and (not value["allow_export"] or recipient != value["recipient"]):
         raise Denied("UNAUTHORIZED_EXPORT", "Lease denies this export or recipient", lease_id)
@@ -76,11 +163,13 @@ def validate(lease_id, *, user, capsule_id, skill, purpose, source_ids, compartm
 def revoke(lease_id, identity):
     actor(identity, ["Data Owner", "Security Officer"])
     from aegis.security.revocation import record
+
     with LOCK:
         require("lease", lease_id)
         record("lease", lease_id, identity)
         from aegis.control.artifacts import erase
         from aegis.control.store import all_objects
+
         for artifact in all_objects("artifact"):
             if artifact["lease_id"] == lease_id and artifact["status"] == "RETAINED":
                 erase(artifact)

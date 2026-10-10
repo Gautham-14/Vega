@@ -1,0 +1,2 @@
+# Guest-only example; independently review before provisioning an image.
+SUBSYSTEM=="virtio-ports", ATTR{name}=="org.aegis.api", OWNER="aegis", GROUP="aegis", MODE="0600"

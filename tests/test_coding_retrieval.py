@@ -2,14 +2,18 @@ import json
 from unittest.mock import patch
 
 import pytest
+
 from aegis.coding import retrieval
 from aegis.control import store
 from aegis.storage.database import init_db
 
 
 def test_exact_and_python_symbols_rank_with_line_evidence():
-    files = {"validate.py": "# validation\ndef valid_port(value):\n    return value > 0\n",
-             "README.md": "The port is documented here.", "other.py": "count = 42\n"}
+    files = {
+        "validate.py": "# validation\ndef valid_port(value):\n    return value > 0\n",
+        "README.md": "The port is documented here.",
+        "other.py": "count = 42\n",
+    }
     results = retrieval.search(files, "valid_port")
     assert results[0]["path"] == "validate.py"
     assert results[0]["line"] == 2
@@ -33,7 +37,9 @@ def test_lexical_splits_identifiers_and_missing_grammar_is_honest():
     assert result["retrieval"]["structure"] == "UNAVAILABLE"
 
 
-@pytest.mark.parametrize("files", [{"../bad": "x"}, {".env": "x"}, {"x": "\x00"}, {"x": "x" * 128001}])
+@pytest.mark.parametrize(
+    "files", [{"../bad": "x"}, {".env": "x"}, {"x": "\x00"}, {"x": "x" * 128001}]
+)
 def test_retrieval_rejects_invalid_snapshots(files):
     with pytest.raises(ValueError):
         retrieval.search(files, "x")
@@ -63,23 +69,36 @@ def test_embedding_digest_changes_with_weight_bytes_and_rejects_code(tmp_path):
 
 def test_semantic_adapter_is_local_only_and_scores_bounded(monkeypatch, tmp_path):
     (tmp_path / "model.safetensors").write_bytes(b"fixture-not-live-weights")
-    (tmp_path / "modules.json").write_text(json.dumps([{"type": "sentence_transformers.models.Transformer", "path": ""}]))
-    profile = {"enabled": True, "requested": True, "status": "PINNED_LOCAL_MODEL", "model_digest": retrieval.model_digest(str(tmp_path))}
+    (tmp_path / "modules.json").write_text(
+        json.dumps([{"type": "sentence_transformers.models.Transformer", "path": ""}])
+    )
+    profile = {
+        "enabled": True,
+        "requested": True,
+        "status": "PINNED_LOCAL_MODEL",
+        "model_digest": retrieval.model_digest(str(tmp_path)),
+    }
     monkeypatch.setenv("AEGIS_EMBEDDING_MODEL_DIR", str(tmp_path))
     monkeypatch.setattr(retrieval, "_embedding_configuration", lambda: profile)
     calls = []
+
     class Vectors:
         def tolist(self):
             return [[1.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
+
     class Model:
         max_seq_length = 1024
+
         def __init__(self, path, **kwargs):
             calls.append(kwargs)
+
         def encode(self, texts, **kwargs):
             assert len(texts) == 3
             return Vectors()
+
     class Module:
         SentenceTransformer = Model
+
     with patch.object(retrieval.importlib, "import_module", return_value=Module):
         scores = retrieval._semantic_scores({"a.py": "foo", "b.py": "bar"}, "idea", profile)
     assert scores["a.py"][0] == 1

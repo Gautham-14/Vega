@@ -1,17 +1,21 @@
 """
 Aegis Sovereign AI Runtime - Dashboard API Route
 """
+
+from typing import Any, Dict
+
 from fastapi import APIRouter
-from typing import Dict, Any
-from aegis.models.registry import get_all_models
-from aegis.knowledge.registry import get_all_documents
+
 from aegis.hardware.scheduler import get_effective_hardware
-from aegis.security.firewall import get_recent_security_events
+from aegis.knowledge.registry import get_all_documents
+from aegis.models.registry import get_all_models
 from aegis.receipts.generator import get_all_receipts
 from aegis.runtime.task_runner import get_all_tasks
+from aegis.security.firewall import get_recent_security_events
 from aegis.security.self_test import get_last_self_test_result
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
+
 
 @router.get("/status")
 def get_dashboard_status() -> Dict[str, Any]:
@@ -35,7 +39,8 @@ def get_dashboard_status() -> Dict[str, Any]:
     security_tests_status = (
         f"{last_self_test['tests_passed']} / {last_self_test['tests_total']} "
         f"{'PASS' if last_self_test['all_passed'] else 'FAIL'}"
-        if last_self_test else "NOT RUN"
+        if last_self_test
+        else "NOT RUN"
     )
 
     return {
@@ -60,10 +65,10 @@ def get_dashboard_status() -> Dict[str, Any]:
             "total_ram_mb": hw.get("total_ram_mb", 8192),
             "available_ram_mb": hw.get("available_ram_mb", 4096),
             "ram_usage_pct": hw.get("ram_usage_percent", 0.0),
-            "is_simulated": hw.get("is_simulated_profile", False)
+            "is_simulated": hw.get("is_simulated_profile", False),
         },
         "recent_tasks_count": len(tasks),
         "recent_receipts_count": len(receipts),
         "recent_security_events_count": len(sec_events),
-        "recent_security_events": sec_events
+        "recent_security_events": sec_events,
     }
