@@ -53,6 +53,18 @@ PATHS += [
         "private_files",
     )
 ]
+PATHS += [
+    Path(__file__).parents[1] / path
+    for path in (
+        "storage/database.py",
+        "storage/migrations.py",
+        "storage/events.py",
+        "control/maintenance.py",
+        "security/incident.py",
+        "security/firewall.py",
+        "security/rules.py",
+    )
+]
 LOADED = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in PATHS}
 
 

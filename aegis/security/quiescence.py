@@ -42,6 +42,9 @@ def exclusive(purpose, lock_path=None):
         yield
     finally:
         if locked:
+            from aegis.storage.database import close_database
+
+            close_database()
             os.lseek(descriptor, 0, os.SEEK_SET)
             if os.name == "nt":
                 import msvcrt

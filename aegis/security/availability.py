@@ -35,6 +35,8 @@ def bounded_setting(name, default, minimum, maximum):
 
 @contextmanager
 def admit(kind, actor=None, provider=""):
+    if kind not in {"http", "provider", "incident"}:
+        raise ValueError("Unknown admission budget")
     actor = actor or actor_context.get()
     global_limit = 16 if kind == "http" else 4
     actor_limit = 4 if kind == "http" else 2
@@ -137,3 +139,6 @@ def maintenance():
         }
         if "admission_leases" in tables:
             conn.execute("DELETE FROM admission_leases WHERE expires_at<=?", (time.time(),))
+    from aegis.control.maintenance import archive_expired
+
+    archive_expired()

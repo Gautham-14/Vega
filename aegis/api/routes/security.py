@@ -5,7 +5,7 @@ Aegis Sovereign AI Runtime - Security API Route
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from aegis.api.demo import require_demo_mode
 from aegis.security import lockdown
@@ -39,9 +39,30 @@ def change_lockdown(req: LockdownRequest, identity=Depends(principal)):
     return lockdown.change(req.enabled, identity)
 
 
+@router.get("/quotas")
+def quotas(identity=Depends(principal)):
+    from aegis.control import policy
+    from aegis.control.maintenance import quotas
+
+    policy.actor(identity)
+    return {"quotas": quotas()}
+
+
+@router.post("/maintenance")
+def maintenance(identity=Depends(principal)):
+    from aegis.control import policy
+    from aegis.control.maintenance import archive_expired
+
+    policy.actor(identity, ["Security Officer", "Key Custodian"])
+    return archive_expired(identity, force=True)
+
+
 class ScanTextRequest(BaseModel):
-    text: str
-    source_identifier: str = "interactive_scanner"
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(max_length=65536)
+    source_identifier: str = Field(
+        default="interactive_scanner", max_length=120, pattern=r"^[A-Za-z0-9_.-]+$"
+    )
 
 
 @router.post("/scan")

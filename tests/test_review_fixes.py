@@ -368,6 +368,7 @@ def test_model_inventory_fails_closed_on_unreadable_directories(tmp_path):
 
 
 def test_database_setup_failure_closes_the_open_connection():
+    db.close_database()  # Setup is performed when the persistent connection opens.
     connection = MagicMock()
     connection.execute.side_effect = db.sqlite3.DatabaseError("synthetic setup failure")
     with patch.object(db.sqlite3, "connect", return_value=connection):

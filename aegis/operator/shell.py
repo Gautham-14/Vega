@@ -185,6 +185,7 @@ def shell(client, parser, *, plain=False, context):
             "receipts": "List control receipts",
             "endpoints": "Discover available API endpoints",
             "lockdown": "Inspect or change the Security Officer incident stop",
+            "maintenance": "Inspect quotas or archive expired operational records",
             "exit": "Exit the shell",
             "clear": "Clear the terminal screen",
         }

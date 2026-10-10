@@ -11,6 +11,7 @@ import secrets
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -23,18 +24,79 @@ class Channel:
         self.sock = sock
         self.stream = sock.makefile("rwb", buffering=0)
         self.broken = False
+        self.pending = {}
+        self.condition = threading.Condition()
+        self.writer = threading.Lock()
+        self.reader = None
+
+    def _fail(self, error):
+        with self.condition:
+            self.broken = True
+            for pending in self.pending.values():
+                pending["error"] = error
+                pending["ready"].set()
+            self.condition.notify_all()
+
+    def _receive(self):
+        try:
+            while True:
+                with self.condition:
+                    self.condition.wait_for(lambda: self.pending or self.broken)
+                    if self.broken:
+                        return
+                result = protocol.receive(self.stream)
+                with self.condition:
+                    pending = self.pending.get(result.get("id"))
+                    if pending is None or pending["ready"].is_set():
+                        raise OSError("Unsolicited or duplicate VM response")
+                    pending["result"] = result
+                    pending["ready"].set()
+                    # A completed response must not start another idle socket read.
+                    self.pending.pop(result["id"])
+        except Exception as error:
+            self._fail(error)
 
     def exchange(self, request):
-        if self.broken:
-            raise OSError("VM channel failed; restart and investigate")
+        # Health is the only uncorrelated envelope and runs before the gateway.
+        if "id" not in request:
+            with self.writer:
+                if self.broken or self.reader is not None:
+                    raise OSError("VM health handshake must precede API requests")
+                try:
+                    protocol.send(self.stream, request)
+                    return protocol.receive(self.stream)
+                except Exception as error:
+                    self._fail(error)
+                    raise
+        pending = {"ready": threading.Event()}
+        with self.condition:
+            if self.broken or len(self.pending) >= 12 or request["id"] in self.pending:
+                raise OSError("VM channel unavailable or request budget exhausted")
+            self.pending[request["id"]] = pending
+            if self.reader is None:
+                self.reader = threading.Thread(target=self._receive, daemon=True)
+                self.reader.start()
+            self.condition.notify_all()
         try:
-            protocol.send(self.stream, request)
-            return protocol.receive(self.stream)
-        except Exception:
-            self.broken = True
+            with self.writer:
+                protocol.send(self.stream, request)
+            if not pending["ready"].wait(310):
+                raise TimeoutError("VM request deadline exceeded")
+            if "error" in pending:
+                raise OSError("VM channel failed") from pending["error"]
+            return pending["result"]
+        except Exception as error:
+            self._fail(error)
             raise
 
     def close(self):
+        self._fail(OSError("VM channel closed"))
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        if self.reader is not None:
+            self.reader.join(timeout=2)
         self.stream.close()
         self.sock.close()
 
@@ -49,20 +111,39 @@ def connect(settings):
         ):
             sock.close()
             raise ValueError("VM transport peer certificate pin mismatch")
-        sock.settimeout(130)
+        sock.settimeout(310)
         return Channel(sock)
     except Exception:
         raw.close()
         raise
 
 
-class Gateway(http.server.HTTPServer):
+class Gateway(http.server.ThreadingHTTPServer):
     allow_reuse_address = False
+    daemon_threads = True
 
     def __init__(self, port, channel):
-        # Deliberately single-worker: bounded memory and serialized virtio RPC.
         super().__init__(("127.0.0.1", port), Handler)
         self.channel = channel
+        self.connections = threading.BoundedSemaphore(32)
+        self.operations = threading.BoundedSemaphore(8)
+        self.incidents = threading.BoundedSemaphore(4)
+
+    def process_request(self, request, address):
+        if not self.connections.acquire(blocking=False):
+            request.close()
+            return
+        try:
+            super().process_request(request, address)
+        except BaseException:
+            self.connections.release()
+            raise
+
+    def process_request_thread(self, request, address):
+        try:
+            super().process_request_thread(request, address)
+        finally:
+            self.connections.release()
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -71,8 +152,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
     sys_version = ""
 
     def setup(self):
-        self.request.settimeout(15)
+        self.request.settimeout(5)
         super().setup()
+
+        def expire():
+            try:
+                self.request.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+        self.receive_deadline = threading.Timer(5, expire)
+        self.receive_deadline.daemon = True
+        self.receive_deadline.start()
+
+    def finish(self):
+        self.receive_deadline.cancel()
+        super().finish()
+
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except OSError:
+            # Absolute receive expiry and client disconnects are expected.
+            self.close_connection = True
 
     def log_message(self, *args):
         pass  # Never log request paths, credentials, queries or bodies.
@@ -104,16 +206,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
             protocol.target(self.command, self.path)
             headers = protocol.headers([list(pair) for pair in self.headers.items()])
             body = protocol.read_exact(self.rfile, length)
+            self.receive_deadline.cancel()
             request_id = secrets.token_hex(16)
-            result = self.server.channel.exchange(
-                {
-                    "id": request_id,
-                    "method": self.command,
-                    "path": self.path,
-                    "headers": [list(pair) for pair in headers],
-                    "body": protocol.encode_body(body),
-                }
+            from aegis.security.incident import route
+
+            # The guest still authenticates and authorizes every control request.
+            slots = (
+                self.server.incidents if route(self.command, self.path) else self.server.operations
             )
+            if not slots.acquire(blocking=False):
+                self.send_error(429, "VM request budget exhausted")
+                return
+            try:
+                result = self.server.channel.exchange(
+                    {
+                        "id": request_id,
+                        "method": self.command,
+                        "path": self.path,
+                        "headers": [list(pair) for pair in headers],
+                        "body": protocol.encode_body(body),
+                    }
+                )
+            finally:
+                slots.release()
             if (
                 set(result) != {"id", "status", "headers", "body"}
                 or result["id"] != request_id

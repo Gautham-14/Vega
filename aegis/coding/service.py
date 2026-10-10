@@ -75,6 +75,18 @@ IMPLEMENTATION_PATHS += [
     )
 ]
 IMPLEMENTATION_PATHS.append(Path(__file__).parents[1] / "knowledge" / "ranking.py")
+IMPLEMENTATION_PATHS += [
+    Path(__file__).parents[1] / path
+    for path in (
+        "storage/database.py",
+        "storage/migrations.py",
+        "storage/events.py",
+        "control/maintenance.py",
+        "security/incident.py",
+        "security/firewall.py",
+        "security/rules.py",
+    )
+]
 LOADED_IMPLEMENTATION = {
     p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in IMPLEMENTATION_PATHS
 }

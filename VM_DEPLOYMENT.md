@@ -33,9 +33,19 @@ TCG, not an implemented ARM-native guest. GPU passthrough is not implemented.
 The host administrator/hypervisor remain trusted; VM isolation is not hardware
 confidential computing. Shutdown currently terminates the owned process rather
 than performing an orderly guest shutdown; crash-safe storage/recovery needs
-acceptance. HTTP messages are bounded, serialized, and do not support streaming,
+acceptance. HTTP messages are bounded and do not support streaming,
 WebSockets or chunked uploads. Native `users`/`backup` commands administer host
 storage, not the guest: perform guest administration inside its reviewed console.
+
+The host gateway caps connections at 32 and ordinary in-flight operations at
+eight, with four additional incident-route slots. Each connection has a five-second
+absolute header/body deadline. The existing authenticated transport correlates
+responses by request ID, and the guest forwards up to eight ordinary and four
+incident operations concurrently. The guest still authenticates credentials,
+checks roles and requires fresh MFA; selecting an incident path grants no
+authority. Guest forwarding has a 300-second absolute deadline, within the
+host's 310-second channel deadline. These are software concurrency bounds, not
+a guarantee of availability under host or guest resource exhaustion.
 
 QEMU's [TLS guide](https://www.qemu.org/docs/master/system/tls.html) and
 [invocation reference](https://www.qemu.org/docs/master/system/qemu-manpage.html)

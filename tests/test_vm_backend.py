@@ -239,7 +239,7 @@ def test_guest_forwards_only_to_fixed_api(monkeypatch):
             "body": protocol.encode_body(b"{}"),
         }
     )
-    factory.assert_called_once_with("127.0.0.1", 8000, timeout=120)
+    factory.assert_called_once_with("127.0.0.1", 8000, timeout=300)
     connection.putheader.assert_any_call("Authorization", "Bearer token")
     connection.putheader.assert_any_call("Origin", "http://evil.invalid")
     assert result["status"] == 401

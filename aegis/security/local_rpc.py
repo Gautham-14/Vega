@@ -24,8 +24,9 @@ def peer_uid(stream):
     return struct.unpack("3i", stream.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[1]
 
 
-def receive(stream):
-    deadline = time.monotonic() + 5
+def receive(stream, *, deadline=None):
+    if deadline is None:
+        deadline = time.monotonic() + 5
 
     def read(size):
         parts = bytearray()
@@ -33,7 +34,7 @@ def receive(stream):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("Custody frame deadline exceeded")
-            stream.settimeout(min(remaining, 5))
+            stream.settimeout(remaining)
             chunk = stream.recv(size - len(parts))
             if not chunk:
                 raise ValueError("Truncated custody response")
@@ -79,12 +80,13 @@ def call(path, owner_uid, request, timeout=5):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
         if not 1 <= timeout <= 120:
             raise ValueError("Invalid custody deadline")
+        deadline = time.monotonic() + timeout
         stream.settimeout(timeout)
         stream.connect(str(target))
         if peer_uid(stream) != owner_uid:
             raise ValueError("Custody service identity differs from policy")
         send(stream, request)
-        result = receive(stream)
+        result = receive(stream, deadline=deadline)
     if result.get("ok") is not True:
         raise RuntimeError("Custody service refused the operation")
     return result["result"]

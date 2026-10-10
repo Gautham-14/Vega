@@ -14,7 +14,7 @@ def status():
     with store.LOCK:
         # Check even when the state is absent: deleting the state and its receipt
         # must not make a damaged ledger look like a fresh, unlocked installation.
-        if not store.verify_chain(record_failure=False)["is_valid"]:
+        if not store.verify_chain(record_failure=False, full=False)["is_valid"]:
             raise store.Denied(
                 "LOCKDOWN_INTEGRITY_FAILURE",
                 "Incident-control ledger is damaged; execution is withheld",
