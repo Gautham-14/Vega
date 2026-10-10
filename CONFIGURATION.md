@@ -43,6 +43,16 @@ Production requires a separately provisioned Linux host; see DEPLOYMENT_ACCEPTAN
 | `AEGIS_MIN_FREE_BYTES` | 64 MiB; accepted range 1 MiB–1 GiB. Minimum free-disk admission margin. |
 | `AEGIS_MAX_RECEIPTS` | 100000; range 100–1000000. Ledger ceiling; existing receipts are never silently pruned. |
 
+Operational object quotas remain 4,096 per kind. Use `aegis maintenance status`
+to inspect counts and the 75% warning threshold, and `aegis maintenance archive`
+as a Security Officer or Key Custodian to archive signed expired records. The
+schema-3 migration retains existing rows; expiry archival preserves signed
+tombstones and audit receipts. Back up and stop services before an upgrade.
+
+Scanner API requests accept at most 65,536 text characters and source identifiers
+of 1–120 ASCII letters, digits, underscores, dots or hyphens. Internal scans accept
+up to 1,000,000 characters. These fixed limits are not environment settings.
+
 `AEGIS_ASCII_LOGO`, `AEGIS_BANNER`, `AEGIS_LOGO_RICH` and
 `AEGIS_INFO_PANEL` are Python display constants, not environment settings.
 Former `ZERO_EGRESS_ENFORCED` and `ALLOW_EXTERNAL_CALLS` constants were unused

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 BASELINE_SQL = (
     "CREATE TABLE IF NOT EXISTS models (\n    id TEXT PRIMARY KEY,\n    name TEXT NOT NULL,\n    version TEXT NOT NULL,\n    architecture TEXT NOT NULL,\n    parameters TEXT NOT NULL,\n    quantization TEXT NOT NULL,\n    capabilities TEXT NOT NULL, -- JSON array\n    license TEXT NOT NULL,\n    sha256 TEXT NOT NULL,\n    status TEXT NOT NULL, -- QUARANTINED, BENCHMARKING, SHADOW_MODE, QUALIFIED, REJECTED\n    memory_req_mb INTEGER NOT NULL,\n    cpu_cores_req INTEGER NOT NULL,\n    gpu_vram_req_mb INTEGER NOT NULL DEFAULT 0,\n    qualification_score REAL DEFAULT NULL,\n    shadow_agreement_score REAL DEFAULT NULL,\n    benchmark_summary TEXT DEFAULT NULL, -- JSON object\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);",
@@ -53,3 +53,9 @@ def migrate(connection: sqlite3.Connection) -> None:
                 "ALTER TABLE auth_sessions ADD COLUMN mfa_at REAL NOT NULL DEFAULT 0"
             )
         connection.execute("PRAGMA user_version = 2")
+    if current < 3:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS control_archives (kind TEXT NOT NULL, id TEXT NOT NULL, "
+            "body TEXT NOT NULL, PRIMARY KEY(kind,id))"
+        )
+        connection.execute("PRAGMA user_version = 3")

@@ -177,9 +177,11 @@ async def protect_local_mutations(request: Request, call_next):
             return JSONResponse({"detail": str(error), "code": error.code}, status_code=403)
     started = time.monotonic()
     from aegis.security.availability import actor_context, admit
+    from aegis.security.incident import reserved
 
     token = actor_context.set(getattr(request.state, "actor", "anonymous"))
-    admission = admit("http", actor_context.get())
+    kind = "incident" if reserved(request.method, path, actor_context.get()) else "http"
+    admission = admit(kind, actor_context.get())
     try:
         await asyncio.to_thread(admission.__enter__)
     except HTTPException as error:

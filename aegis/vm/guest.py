@@ -1,4 +1,4 @@
-"""Guest-only serial bridge. Run as the restricted API identity, not root."""
+"""Bounded concurrent guest bridge. Run as the restricted API identity, not root."""
 
 from __future__ import annotations
 
@@ -7,8 +7,10 @@ import http.client
 import json
 import os
 import re
+import socket
 import stat
 import sys
+import threading
 
 from aegis.version import __version__
 from aegis.vm import protocol
@@ -24,13 +26,27 @@ def forward(request):
     protocol.target(request["method"], request["path"])
     headers = protocol.headers(request["headers"])
     body = protocol.decode_body(request["body"])
-    connection = http.client.HTTPConnection("127.0.0.1", 8000, timeout=120)
+    connection = http.client.HTTPConnection("127.0.0.1", 8000, timeout=300)
+    active_socket = None
+
+    def expire():
+        stream = active_socket if active_socket is not None else connection.sock
+        if stream is not None:
+            try:
+                stream.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    deadline = threading.Timer(300, expire)
+    deadline.daemon = True
     try:
+        deadline.start()
         connection.putrequest(request["method"], request["path"], skip_accept_encoding=True)
         for name, value in headers:
             connection.putheader(name, value)
         connection.putheader("Content-Length", str(len(body)))
         connection.endheaders(body)
+        active_socket = connection.sock
         response = connection.getresponse()
         result = response.read(protocol.MAX_BODY + 1)
         return {
@@ -43,6 +59,7 @@ def forward(request):
             "body": protocol.encode_body(result),
         }
     finally:
+        deadline.cancel()
         connection.close()
 
 
@@ -66,13 +83,54 @@ def health():
 
 
 def serve(stream):
+    writer = threading.Lock()
+    operations = threading.BoundedSemaphore(8)
+    incidents = threading.BoundedSemaphore(4)
+    from aegis.security.incident import route
+
+    def respond(request, slots):
+        try:
+            try:
+                result = forward(request)
+            except (ValueError, OSError, http.client.HTTPException):
+                result = {
+                    "id": request["id"],
+                    "status": 503,
+                    "headers": [],
+                    "body": protocol.encode_body(b'{"detail":"Guest API request failed"}'),
+                }
+            with writer:
+                protocol.send(stream, result)
+        finally:
+            slots.release()
+
     while True:
         request = protocol.receive(stream)
         if set(request) == {"operation"} and request["operation"] == "health":
             result = health()
+            with writer:
+                protocol.send(stream, result)
         else:
-            result = forward(request)
-        protocol.send(stream, result)
+            if set(request) != {"id", "method", "path", "headers", "body"} or not re.fullmatch(
+                r"[0-9a-f]{32}", str(request["id"])
+            ):
+                raise ValueError("Invalid VM request envelope")
+            slots = incidents if route(request["method"], request["path"]) else operations
+            if not slots.acquire(blocking=False):
+                with writer:
+                    protocol.send(
+                        stream,
+                        {
+                            "id": request["id"],
+                            "status": 429,
+                            "headers": [],
+                            "body": protocol.encode_body(
+                                b'{"detail":"Guest request budget exhausted"}'
+                            ),
+                        },
+                    )
+            else:
+                threading.Thread(target=respond, args=(request, slots), daemon=True).start()
 
 
 def main(argv=None):

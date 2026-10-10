@@ -5,11 +5,13 @@ hidden instructions, zero-width steganography, and malicious overrides.
 """
 
 import time
-import uuid
 from typing import Any, Dict, List
 
 from aegis.security.rules import INJECTION_PATTERNS, ZERO_WIDTH_CHARS
-from aegis.storage.database import execute_write, query_all
+from aegis.storage.database import query_all
+from aegis.storage.events import record, safe_reference
+
+MAX_SCAN_CHARS = 1_000_000
 
 
 class ContextFirewall:
@@ -25,6 +27,9 @@ class ContextFirewall:
         """
         Scan a block of text for prompt injection, hidden instructions, and adversarial payload.
         """
+        if not isinstance(text, str) or len(text) > MAX_SCAN_CHARS:
+            raise ValueError("Scanner accepts at most 1,000,000 characters")
+        source_identifier = safe_reference(source_identifier)
         matched_rules = []
         highest_severity = "NONE"
 
@@ -83,9 +88,12 @@ class ContextFirewall:
 
         # 2. Check for hidden zero-width and control characters
         detected_hidden = []
+        hidden_count = 0
         for char in text:
             if char in self.zero_width_chars:
-                detected_hidden.append(self.zero_width_chars[char])
+                hidden_count += 1
+                if len(detected_hidden) < 5:
+                    detected_hidden.append(self.zero_width_chars[char])
 
         if detected_hidden:
             matched_rules.append(
@@ -93,7 +101,7 @@ class ContextFirewall:
                     "rule_id": "RULE-HIDDEN-001",
                     "rule_name": "Hidden Character Steganography",
                     "severity": "HIGH",
-                    "description": f"Detected {len(detected_hidden)} hidden/zero-width characters.",
+                    "description": f"Detected {hidden_count} hidden/zero-width characters.",
                     "matched_snippets": detected_hidden[:5],
                 }
             )
@@ -112,28 +120,15 @@ class ContextFirewall:
 
         # Log security event if unsafe
         if not is_safe:
-            event_id = f"SEC-{uuid.uuid4().hex[:8]}"
             rule_names = ", ".join(r["rule_name"] for r in matched_rules)
-            execute_write(
-                """
-                INSERT INTO security_events (
-                    id, event_type, severity, description,
-                    source_document, matched_rule, raw_payload,
-                    action_taken, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-                (
-                    event_id,
-                    "PROMPT_INJECTION"
-                    if any("INJ" in r["rule_id"] for r in matched_rules)
-                    else "HIDDEN_INSTRUCTION",
-                    highest_severity,
-                    f"Context Firewall blocked suspicious content from: {source_identifier}",
-                    source_identifier,
-                    rule_names,
-                    None,  # Audit rule IDs, never confidential document or query text.
-                    action,
-                ),
+            record(
+                "PROMPT_INJECTION"
+                if any("INJ" in r["rule_id"] for r in matched_rules)
+                else "HIDDEN_INSTRUCTION",
+                source_identifier,
+                severity=highest_severity,
+                action=action,
+                rules=rule_names,
             )
 
         return {
@@ -142,7 +137,7 @@ class ContextFirewall:
             "risk_score": risk_score,
             "highest_severity": highest_severity,
             "matched_rules": matched_rules,
-            "hidden_char_count": len(detected_hidden),
+            "hidden_char_count": hidden_count,
             "source": source_identifier,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }

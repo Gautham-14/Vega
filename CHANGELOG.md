@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Replace quadratic injection rules with linear scanning and cap scanner inputs.
+- Bound and sanitize shared security-event persistence with 4,000-row retention.
+- Reserve authenticated incident admission and upload capacity, including MFA step-up.
+- Multiplex VM bridge requests with bounded concurrent dispatch and absolute receive deadlines.
+- Preserve caller RPC deadlines through response framing while retaining short inbound deadlines.
+- Add signed expiry archival, schema-3 tombstones and `maintenance status/archive` commands.
+- Cache verified receipt checkpoints with tamper invalidation and full startup/recovery/audit checks.
+
 - Add source-level isolated production guest hosting on Windows/macOS/Linux; infrastructure acceptance remains deferred.
 - Connect pinned local GGUF text/code/vision models with on-demand loading, semantic prompt routing and explicit PUBLIC-only auto-chat.
 - Repair Windows packaged-app AppData redirection by placing the pinned local runtime in the checkout's ignored runtime directory.

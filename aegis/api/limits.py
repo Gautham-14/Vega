@@ -12,11 +12,20 @@ class RequestBodyLimit:
     def __init__(self, app):
         self.app = app
         self.readers = 0
+        self.incident_readers = 0
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope["method"] not in {"POST", "PUT", "PATCH", "DELETE"}:
             return await self.app(scope, receive, send)
         limit = 12_000_000 if scope.get("path", "").startswith("/api/media/") else 4_000_000
+        from aegis.security.incident import reserved
+
+        actor = scope.get("state", {}).get("actor")
+        incident = bool(actor and reserved(scope["method"], scope.get("path", ""), actor))
+        reader_kind = "incident_readers" if incident else "readers"
+        maximum = 2 if incident else self.max_readers
+        if incident:
+            limit = 16384
         lengths = [
             value for key, value in scope.get("headers", []) if key.lower() == b"content-length"
         ]
@@ -31,13 +40,13 @@ class RequestBodyLimit:
             return await JSONResponse({"detail": "Invalid content length"}, status_code=400)(
                 scope, receive, send
             )
-        if self.readers >= self.max_readers:
+        if getattr(self, reader_kind) >= maximum:
             return await JSONResponse(
                 {"detail": "Too many uploads; retry shortly"},
                 status_code=429,
                 headers={"Retry-After": "1"},
             )(scope, receive, send)
-        self.readers += 1
+        setattr(self, reader_kind, getattr(self, reader_kind) + 1)
         body = bytearray()
         try:
             async with asyncio.timeout(self.read_timeout):
@@ -60,7 +69,7 @@ class RequestBodyLimit:
         finally:
             # Slots cover uploads, not long-running inference, so incident commands
             # are not excluded just because model jobs are running.
-            self.readers -= 1
+            setattr(self, reader_kind, getattr(self, reader_kind) - 1)
         if lengths and len(body) != int(lengths[0]):
             return await JSONResponse(
                 {"detail": "Content length does not match body"}, status_code=400

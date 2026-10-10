@@ -89,6 +89,9 @@ def build_parser():
     incident.add_argument(
         "action", choices=["status", "enable", "disable"], nargs="?", default="status"
     )
+    commands.add_parser(
+        "maintenance", help="Inspect quotas or archive signed expired operational records"
+    ).add_argument("action", choices=["status", "archive"], nargs="?", default="status")
     login.add_argument("username", nargs="?")
     login.add_argument(
         "--mfa", action="store_true", help="Prompt securely for the enrolled authenticator code"

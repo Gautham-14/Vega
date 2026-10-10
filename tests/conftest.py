@@ -45,6 +45,8 @@ def isolated_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(enclave, "WORKSPACES_DIR", config.WORKSPACES_DIR)
     monkeypatch.setattr(generator, "RECEIPTS_DIR", config.RECEIPTS_DIR)
     monkeypatch.setattr(self_test, "_last_result", None)
+    yield
+    database.close_database()
 
 
 @pytest.fixture

@@ -5,6 +5,67 @@ Aegis Sovereign AI Runtime - Security Heuristics & Injection Rule Definitions
 import re
 from typing import Any, Dict, List
 
+
+class LinearExfiltration:
+    """Track whitespace and line states with one bounded-width token scan."""
+
+    token = re.compile(
+        r"(?P<verb>exfiltrate|leak|post|send)(?=\s)|"
+        r"(?P<destination>(?<=\s)(?:to|url|http|ftp))|(?P<newline>\n)|(?P<text>\S)",
+        re.I,
+    )
+    destination = re.compile(r"(to|url|http|ftp)", re.I)
+
+    def search(self, text):
+        return next(self._matches(text), None)
+
+    def _matches(self, text):
+        prefix = None
+        body = suffix = False
+        for token in self.token.finditer(text):
+            if token.lastgroup == "newline":
+                suffix = suffix or body
+                body = False
+                continue
+            if token.lastgroup == "destination" and (
+                body or suffix or prefix is not None and token.start() >= prefix + 2
+            ):
+                yield self.destination.match(text, token.start())
+            suffix = False
+            if prefix is not None:
+                body = True
+                prefix = None
+            if token.lastgroup == "verb":
+                prefix = token.end()
+
+    def findall(self, text):
+        matches = []
+        for match in self._matches(text):
+            matches.append(match.group(1))
+            if len(matches) == 3:
+                break
+        return matches
+
+
+class LinearComment:
+    keyword = re.compile(r"override|ignore|exfiltrate|secret|password", re.I)
+
+    def findall(self, text):
+        matches = []
+        offset = 0
+        while (start := text.find("<!--", offset)) >= 0:
+            end = text.find("-->", start + 4)
+            if end < 0:
+                end = len(text)
+            match = self.keyword.search(text, start + 4, end)
+            if match:
+                matches.append(match.group())
+                if len(matches) == 3:
+                    break
+            offset = end + 3
+        return matches
+
+
 INJECTION_PATTERNS: List[Dict[str, Any]] = [
     {
         "id": "RULE-INJ-001",
@@ -36,9 +97,7 @@ INJECTION_PATTERNS: List[Dict[str, Any]] = [
     {
         "id": "RULE-INJ-004",
         "name": "Exfiltration Target",
-        "pattern": re.compile(
-            r"(exfiltrate|leak|post|send)\s+.*?\s+(to|url|http|ftp)", re.IGNORECASE
-        ),
+        "pattern": LinearExfiltration(),
         "severity": "CRITICAL",
         "description": "Attempt to establish an egress exfiltration vector.",
     },
@@ -61,9 +120,7 @@ INJECTION_PATTERNS: List[Dict[str, Any]] = [
     {
         "id": "RULE-INJ-007",
         "name": "Hidden Markup Comment Injection",
-        "pattern": re.compile(
-            r"<!--[\s\S]*?(override|ignore|exfiltrate|secret|password)[\s\S]*?-->", re.IGNORECASE
-        ),
+        "pattern": LinearComment(),
         "severity": "HIGH",
         "description": "Suspicious hidden HTML/Markdown comment containing prompt override.",
     },

@@ -42,8 +42,32 @@ and monotonic signed-release versions are separate compatibility identifiers.
 Database upgrades use `PRAGMA user_version`, an immediate transaction and
 idempotent legacy initialization. Version 0 means an unversioned database;
 version 1 supplies baseline tables; version 2 adds task artifacts and session
-MFA timestamps when absent. Newer unknown schemas are rejected. Back up and
+MFA timestamps when absent; version 3 adds signed expiry tombstones. Newer unknown schemas are rejected. Back up and
 stop services before upgrades; never downgrade a migrated database in place.
+
+SQLite access uses one process connection under a reentrant lock, with savepoints
+for nested helpers. A verified receipt checkpoint avoids rescanning historical
+rows on every append and lockdown check. Changes to ledger tables, commits from
+other connections, database replacement and connection reopening invalidate it.
+Head signatures and the independent witness are still checked. Startup, recovery
+and explicit audits retain full verification; this cache is not a new trust anchor.
+
+Authenticated incident routes have four reserved admission leases (two per
+actor), separate from sixteen ordinary leases. Incident uploads have two
+reserved readers and a 16 KiB cap. MFA step-up for privileged actors also uses
+reserved capacity. Scanner API text is capped at 65,536 characters, direct
+scanner inputs at 1,000,000; adversarial verb and comment matching uses linear
+scans. Security events retain at most 4,000 bounded metadata rows; unsafe source
+references become SHA-256 digests and request text is not persisted.
+
+`aegis maintenance status` reports object quotas and their 75% high-water mark.
+`aegis maintenance archive` requires a Security Officer or Key Custodian and
+archives signed expired operational records without retained ciphertext or
+running work. Maintenance at the high-water mark and admission at the 4,096
+per-kind ceiling also attempt expiry archival. Receipt commitments are published
+before deletion; signed tombstones prevent API identity reuse. Audit receipts,
+revocations, accounts and policy history are preserved. Archival reduces active
+object counts, not the immutable ledger or overall disk-budget requirements.
 
 Installed packages default to `~/.aegis/runtime`; source checkouts retain
 `data/`. `AEGIS_DATA_DIR` overrides both. Sensitive paths reject network storage,

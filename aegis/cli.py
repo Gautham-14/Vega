@@ -75,6 +75,12 @@ def execute(args, client):
     command = {"coding-capsule": "register", "coding-lease": "lease", "coding-run": "run"}.get(
         args.command, args.command
     )
+    if command == "maintenance":
+        return (
+            client.call("/security/quotas")
+            if args.action == "status"
+            else client.call("/security/maintenance", "POST")
+        )
     if command == "local-models":
         return client.call("/chat/models")
     if command == "auto":

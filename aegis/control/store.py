@@ -7,19 +7,19 @@ import json
 import os
 import re
 import secrets
-import threading
 import time
 import uuid
 
 from aegis import config
 from aegis.storage.database import (
-    execute_write,
+    LOCK,
     get_db_connection,
+    ledger_token,
     query_all,
     query_one,
 )
 
-LOCK = threading.RLock()
+_verified_ledger = None
 
 
 def canonical(value):
@@ -42,7 +42,7 @@ def _requires_existing_key():
         tables = {
             row[0] for row in conn.execute("SELECT name FROM sqlite_schema WHERE type='table'")
         }
-        for table in ("control_receipts", "control_head"):
+        for table in ("control_receipts", "control_head", "control_archives"):
             if table in tables and conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone():
                 return True
         if "control_objects" in tables:
@@ -248,11 +248,27 @@ def require(kind, identity):
 
 
 def put(kind, identity, value):
+    from aegis.control.maintenance import OBJECT_QUOTA, archive_expired
+
     raw = canonical(value)
     if len(raw.encode()) > 16 * 1024 * 1024:
         raise ValueError("Protected object exceeds storage budget")
+    with LOCK:
+        if query_one("SELECT 1 FROM control_archives WHERE kind=? AND id=?", (kind, identity)):
+            raise ValueError("Archived identities cannot be restored or reused")
+        if (
+            query_one("SELECT COUNT(*) AS count FROM control_objects WHERE kind=?", (kind,))[
+                "count"
+            ]
+            >= OBJECT_QUOTA
+        ):
+            archive_expired(kind=kind, force=True)
     with LOCK, get_db_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
+        if conn.execute(
+            "SELECT 1 FROM control_archives WHERE kind=? AND id=?", (kind, identity)
+        ).fetchone():
+            raise ValueError("Archived identities cannot be restored or reused")
         if (
             not conn.execute(
                 "SELECT 1 FROM control_objects WHERE kind=? AND id=?", (kind, identity)
@@ -260,7 +276,7 @@ def put(kind, identity, value):
             and conn.execute(
                 "SELECT COUNT(*) FROM control_objects WHERE kind=?", (kind,)
             ).fetchone()[0]
-            >= 4096
+            >= OBJECT_QUOTA
         ):
             raise ValueError("Protected object quota reached; archive expired operational state")
         conn.execute(
@@ -279,16 +295,9 @@ def all_objects(kind):
 
 
 def event(code, reference="", action="BLOCKED"):
-    identity = uid("SEC")
-    execute_write(
-        "INSERT INTO security_events(id,event_type,severity,description,source_document,action_taken) "
-        "VALUES(?,?,?,?,?,?)",
-        (identity, code, "HIGH", code.replace("_", " "), reference, action),
-    )
-    execute_write(
-        "DELETE FROM security_events WHERE rowid NOT IN (SELECT rowid FROM security_events ORDER BY rowid DESC LIMIT 4000)"
-    )
-    return identity
+    from aegis.storage.events import record
+
+    return record(code, reference, action=action)
 
 
 class Denied(ValueError):
@@ -339,13 +348,31 @@ def verify_rows(rows, head, key=None, keyring=None):
             rows.close()
 
 
-def verify_chain(record_failure=True):
+def _validated(conn, head, *, full=False):
+    global _verified_ledger
+    token = ledger_token(conn)
+    current = dict(head) if head else None
+    if not full and _verified_ledger == (token, current):
+        # Always recheck the trust root; key rotation/unavailable custody is not
+        # authorized by a previously verified in-memory checkpoint.
+        return head is None or verify_signature(
+            {"sequence": head["sequence"], "hash": head["hash"]}, "receipt-head", head["signature"]
+        )
+    valid = verify_rows(conn.execute("SELECT * FROM control_receipts ORDER BY sequence"), head)
+    _verified_ledger = (token, current) if valid else None
+    return valid
+
+
+def verify_chain(record_failure=True, *, full=True):
     with LOCK, get_db_connection() as conn:
         conn.execute("BEGIN")
-        count = conn.execute("SELECT COUNT(*) FROM control_receipts").fetchone()[0]
-        rows = conn.execute("SELECT * FROM control_receipts ORDER BY sequence")
         head = conn.execute("SELECT * FROM control_head WHERE singleton=1").fetchone()
-        valid = verify_rows(rows, head)
+        valid = _validated(conn, head, full=full)
+        count = (
+            (head["sequence"] if head else 0)
+            if valid
+            else conn.execute("SELECT COUNT(*) FROM control_receipts").fetchone()[0]
+        )
         anchored = False
         if valid:
             from aegis.security import audit_anchor
@@ -368,13 +395,13 @@ def verify_chain(record_failure=True):
 
 
 def receipt(action, actor="system", **metadata):
+    global _verified_ledger
     if set(metadata) & {"id", "sequence", "timestamp", "previous_receipt_hash", "receipt_hash"}:
         raise ValueError("Receipt metadata cannot replace chain identity fields")
     with LOCK, get_db_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        rows = conn.execute("SELECT * FROM control_receipts ORDER BY sequence")
         head = conn.execute("SELECT * FROM control_head WHERE singleton=1").fetchone()
-        if not verify_rows(rows, head):
+        if not _validated(conn, head):
             # Record after the write transaction has released its lock.
             conn.rollback()
             raise Denied("RECEIPT_CHAIN_FAILURE", "Receipt chain is damaged; append refused")
@@ -400,20 +427,26 @@ def receipt(action, actor="system", **metadata):
             **metadata,
         }
         hashed = digest(body)
+        head_data = {"sequence": sequence, "hash": hashed}
+        # Initialize or resolve custody before the first protected row exists.
+        # Missing keys for an existing ledger must still fail closed.
+        head_signature = sign(head_data, "receipt-head")
         conn.execute(
             "INSERT INTO control_receipts VALUES(?,?,?,?)",
             (sequence, body["id"], canonical(body), hashed),
         )
-        head_data = {"sequence": sequence, "hash": hashed}
         conn.execute(
             "INSERT INTO control_head VALUES(1,?,?,?) ON CONFLICT(singleton) DO UPDATE SET "
             "sequence=excluded.sequence,hash=excluded.hash,signature=excluded.signature",
-            (sequence, hashed, sign(head_data, "receipt-head")),
+            (sequence, hashed, head_signature),
         )
+        new_head = dict(conn.execute("SELECT * FROM control_head WHERE singleton=1").fetchone())
+        checkpoint = (ledger_token(conn), new_head)
+    _verified_ledger = checkpoint
     # Commit locally before publishing. A crash here is recovered by synchronizing
     # the still-authenticated suffix; the witness never accepts an older head.
     if audit_anchor.configured():
-        if not verify_chain(record_failure=False)["is_valid"]:
+        if not verify_chain(record_failure=False, full=False)["is_valid"]:
             raise Denied(
                 "AUDIT_WITNESS_UNAVAILABLE",
                 "Receipt was committed locally but independent acknowledgement failed; reconcile before retrying",
