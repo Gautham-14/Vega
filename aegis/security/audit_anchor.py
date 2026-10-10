@@ -4,10 +4,10 @@ The witness cannot prove that a compromised application recorded honest events.
 It detects rollback/forks relative to commitments it has already acknowledged.
 It never resets an installation or accepts a caller-selected witness key.
 """
+
 import argparse
 import json
 import os
-from pathlib import Path
 import re
 import sqlite3
 import threading
@@ -23,7 +23,9 @@ class Witness:
         self.path = no_links(path)
         self.lock = threading.RLock()
         with self.connect() as conn:
-            conn.execute("CREATE TABLE IF NOT EXISTS anchor (installation TEXT PRIMARY KEY, sequence INTEGER NOT NULL, hash TEXT NOT NULL)")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS anchor (installation TEXT PRIMARY KEY, sequence INTEGER NOT NULL, hash TEXT NOT NULL)"
+            )
         restrict_permissions(self.path)
 
     @contextmanager
@@ -48,7 +50,9 @@ class Witness:
             raise ValueError("Installation requires a host-provisioned identity")
         with self.lock, self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute("SELECT sequence,hash FROM anchor WHERE installation=?", (installation,)).fetchone()
+            row = conn.execute(
+                "SELECT sequence,hash FROM anchor WHERE installation=?", (installation,)
+            ).fetchone()
             if row is None:
                 # Enrollment is an offline administrative operation, never RPC.
                 raise ValueError("Installation is not enrolled in this witness")
@@ -58,17 +62,30 @@ class Witness:
                 if not isinstance(items, list) or not 1 <= len(items) <= 256:
                     raise ValueError("Witness updates require 1-256 contiguous commitments")
                 for item in items:
-                    if (not isinstance(item, dict) or set(item) != {"sequence", "hash", "previous"}
-                        or type(item["sequence"]) is not int or item["sequence"] != sequence + 1
-                        or item["previous"] != digest or not isinstance(item["hash"], str)
-                        or not re.fullmatch(r"[a-f0-9]{64}", item["hash"])):
+                    if (
+                        not isinstance(item, dict)
+                        or set(item) != {"sequence", "hash", "previous"}
+                        or type(item["sequence"]) is not int
+                        or item["sequence"] != sequence + 1
+                        or item["previous"] != digest
+                        or not isinstance(item["hash"], str)
+                        or not re.fullmatch(r"[a-f0-9]{64}", item["hash"])
+                    ):
                         raise ValueError("Witness refuses a rollback, gap or fork")
                     sequence, digest = item["sequence"], item["hash"]
-                conn.execute("UPDATE anchor SET sequence=?,hash=? WHERE installation=?", (sequence, digest, installation))
+                conn.execute(
+                    "UPDATE anchor SET sequence=?,hash=? WHERE installation=?",
+                    (sequence, digest, installation),
+                )
             return {"installation": installation, "sequence": sequence, "hash": digest}
 
     def enroll(self, installation, sequence=0, digest=ZERO):
-        if not re.fullmatch(r"[a-f0-9]{32}", installation) or type(sequence) is not int or sequence < 0 or not re.fullmatch(r"[a-f0-9]{64}", digest):
+        if (
+            not re.fullmatch(r"[a-f0-9]{32}", installation)
+            or type(sequence) is not int
+            or sequence < 0
+            or not re.fullmatch(r"[a-f0-9]{64}", digest)
+        ):
             raise ValueError("Invalid initial audit commitment")
         if sequence == 0 and digest != ZERO:
             raise ValueError("Empty ledger must use the genesis hash")
@@ -82,8 +99,12 @@ def configured():
 
 def remote(operation, **extra):
     from aegis.security.local_rpc import call
-    return call(os.environ["AEGIS_AUDIT_WITNESS_SOCKET"], int(os.environ["AEGIS_AUDIT_WITNESS_UID"]),
-        {"operation": operation, "installation": os.environ["AEGIS_INSTALLATION_ID"], **extra})
+
+    return call(
+        os.environ["AEGIS_AUDIT_WITNESS_SOCKET"],
+        int(os.environ["AEGIS_AUDIT_WITNESS_UID"]),
+        {"operation": operation, "installation": os.environ["AEGIS_INSTALLATION_ID"], **extra},
+    )
 
 
 def synchronize(conn, head):
@@ -92,22 +113,43 @@ def synchronize(conn, head):
         return False
     anchor = remote("status")
     local_sequence = head["sequence"] if head else 0
-    if type(anchor.get("sequence")) is not int or anchor["sequence"] < 0 or anchor["sequence"] > local_sequence:
+    if (
+        type(anchor.get("sequence")) is not int
+        or anchor["sequence"] < 0
+        or anchor["sequence"] > local_sequence
+    ):
         raise RuntimeError("Audit witness detects a rolled-back local ledger")
-    previous = ZERO if anchor["sequence"] == 0 else conn.execute(
-        "SELECT hash FROM control_receipts WHERE sequence=?", (anchor["sequence"],)).fetchone()
+    previous = (
+        ZERO
+        if anchor["sequence"] == 0
+        else conn.execute(
+            "SELECT hash FROM control_receipts WHERE sequence=?", (anchor["sequence"],)
+        ).fetchone()
+    )
     previous = previous if isinstance(previous, str) else previous[0] if previous else None
     if previous != anchor.get("hash"):
         raise RuntimeError("Audit witness detects a forked local ledger")
-    cursor = conn.execute("SELECT sequence,body,hash FROM control_receipts WHERE sequence>? ORDER BY sequence", (anchor["sequence"],))
+    cursor = conn.execute(
+        "SELECT sequence,body,hash FROM control_receipts WHERE sequence>? ORDER BY sequence",
+        (anchor["sequence"],),
+    )
     while True:
         rows = cursor.fetchmany(256)
         if not rows:
             break
-        items = [{"sequence": row["sequence"], "hash": row["hash"],
-                  "previous": json.loads(row["body"])["previous_receipt_hash"]} for row in rows]
+        items = [
+            {
+                "sequence": row["sequence"],
+                "hash": row["hash"],
+                "previous": json.loads(row["body"])["previous_receipt_hash"],
+            }
+            for row in rows
+        ]
         response = remote("advance", commitments=items)
-        if response.get("sequence") != items[-1]["sequence"] or response.get("hash") != items[-1]["hash"]:
+        if (
+            response.get("sequence") != items[-1]["sequence"]
+            or response.get("hash") != items[-1]["hash"]
+        ):
             raise RuntimeError("Audit witness did not acknowledge the local commitment")
     return True
 
@@ -127,6 +169,7 @@ def main():
         witness.enroll(args.installation, args.sequence, args.hash)
     else:
         from aegis.security.local_rpc import serve
+
         serve(args.socket, args.runtime_uid, witness.dispatch)
 
 

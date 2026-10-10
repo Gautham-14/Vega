@@ -1,0 +1,13 @@
+{
+    "name": "Security Audit",
+    "version": 1,
+    "task_types": ["review", "inspection"],
+    "purposes": ["security-audit"],
+    "tools": ["search", "report", "telemetry"],
+    "data_classes": ["PUBLIC", "INTERNAL", "RESTRICTED", "CONFIDENTIAL"],
+    "compartments": ["Engineering", "Maintenance", "Finance", "HR", "Public"],
+    "output_types": ["summary", "advisory", "approval-note"],
+    "export": "local-recipient-only",
+    "evidence": "authorized-current-source",
+    "approval": "high-classification-or-combined"
+}

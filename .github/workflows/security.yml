@@ -9,8 +9,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        python: ['3.11', '3.12']
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.11', '3.12', '3.13', '3.14']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -18,8 +18,21 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install --require-hashes -r requirements-dev.lock
-      - run: python -m pytest -q -p no:cacheprovider
-      - run: python -m compileall -q aegis scripts aegis_cli.py
+      - run: python -m pip install --require-hashes -r requirements-quality.lock
+      - run: python -m scripts.project_checks snapshot --output .audit-tmp/source-snapshot.json
+      - run: python -m coverage run -m pytest -q -ra -p no:cacheprovider --junitxml=.audit-tmp/results.xml
+      - run: python -m coverage json -o .audit-tmp/coverage.json
+      - run: python -m coverage xml -o .audit-tmp/coverage.xml
+      - run: python -m build --wheel --no-isolation --outdir .audit-tmp/wheel
+      - run: python -m scripts.check_package .audit-tmp/wheel --output .audit-tmp/package.json
+      - run: python -m scripts.project_checks release --snapshot .audit-tmp/source-snapshot.json --junit .audit-tmp/results.xml --coverage .audit-tmp/coverage.json --package .audit-tmp/package.json --output .audit-tmp/verification.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: verification-${{ matrix.os }}-${{ matrix.python }}
+          path: .audit-tmp
+          include-hidden-files: true
+      - run: python -m compileall -q aegis scripts tests aegis.py run_aegis.py demo_pipeline.py
       - run: python -m scripts.release_security sbom sbom.json
   dependencies:
     runs-on: ubuntu-latest

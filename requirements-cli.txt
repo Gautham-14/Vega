@@ -1,0 +1,3 @@
+# Optional interactive CLI profile; reviewed together with the runtime lock.
+-r requirements.txt
+prompt-toolkit==3.0.53

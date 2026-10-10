@@ -1,4 +1,5 @@
 """Canonical model metadata checksum shared by the CLI and backend."""
+
 import hashlib
 import json
 
@@ -24,6 +25,9 @@ class ModelManifest(BaseModel):
 
 def compute_manifest_sha256(manifest: dict) -> str:
     fields = ModelManifest.model_fields
-    core = {key: manifest.get(key, fields[key].default)
-            for key in sorted(fields) if key != "sha256"}
-    return hashlib.sha256(json.dumps(core, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+    core = {
+        key: manifest.get(key, fields[key].default) for key in sorted(fields) if key != "sha256"
+    }
+    return hashlib.sha256(
+        json.dumps(core, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()

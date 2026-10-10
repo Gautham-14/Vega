@@ -1,26 +1,30 @@
 """
 Aegis Sovereign AI Runtime - Models API Route
 """
+
+from typing import Any, Dict, List
+
 from fastapi import APIRouter, HTTPException
-from typing import Dict, Any, List
-from pydantic import BaseModel
-from aegis.models.manifest import ModelManifest
+
 from aegis.api.demo import require_demo_mode
+from aegis.models.manifest import ModelManifest
 from aegis.models.registry import (
     get_all_models,
     get_model_by_id,
     import_model_manifest,
+    run_shadow_mode_simulation,
     run_simulated_qualification,
-    run_shadow_mode_simulation
 )
 
 router = APIRouter(prefix="/api/models", tags=["Models"])
 
 ModelManifestImportRequest = ModelManifest
 
+
 @router.get("")
 def list_models() -> List[Dict[str, Any]]:
     return get_all_models()
+
 
 @router.get("/{model_id}")
 def get_model(model_id: str) -> Dict[str, Any]:
@@ -28,6 +32,7 @@ def get_model(model_id: str) -> Dict[str, Any]:
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
     return model
+
 
 @router.post("/import")
 def import_manifest(req: ModelManifestImportRequest) -> Dict[str, Any]:
@@ -38,6 +43,7 @@ def import_manifest(req: ModelManifestImportRequest) -> Dict[str, Any]:
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
 @router.post("/{model_id}/qualify")
 def qualify_model(model_id: str) -> Dict[str, Any]:
     require_demo_mode()
@@ -45,6 +51,7 @@ def qualify_model(model_id: str) -> Dict[str, Any]:
         return run_simulated_qualification(model_id)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.post("/{model_id}/shadow")
 def shadow_model(model_id: str, baseline_id: str = "AEGIS-DEMO-TEXT") -> Dict[str, Any]:

@@ -1,4 +1,5 @@
 """
 Aegis Sovereign AI Runtime package.
 """
-__version__ = "1.0.0"
+
+from .version import __version__ as __version__

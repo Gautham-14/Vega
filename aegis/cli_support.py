@@ -1,6 +1,6 @@
 """Local operator guidance and read-only diagnostics; no model calls or downloads."""
-import re
 
+import re
 
 GUIDES = {
     "advisory": [
@@ -26,11 +26,12 @@ GUIDES = {
     ],
     "start": [
         "doctor — inspect local API, identity, lockdown, receipts and image dependencies",
+        "register — guided registration and interactive onboarding for new accounts",
         "login operator — sign in with a hidden password prompt",
         "context — inspect your selected lease and its current authorization",
-        "help coding | images | models | security | recovery | accounts — workflow guides",
+        "help coding | images | models | security | recovery | accounts | register | goal — workflow guides",
         "help <command> — exact arguments; --help — full command reference",
-        "In the shell: /compose for multiline input; /exit to leave. No command history is saved.",
+        "In the shell: /register to sign up; /goal for autonomous tasks; /compose for multiline; /clear to reset; /exit to leave.",
     ],
     "coding": [
         "Data Owner: import <directory> --name <name>; private/generated files are excluded",
@@ -82,6 +83,7 @@ GUIDES = {
         "Restores revoke sessions and require fresh execution approvals; check historical lockdown state.",
     ],
     "accounts": [
+        "register — guided registration and interactive onboarding for new accounts",
         "users roles — list local role/clearance templates",
         "Local administrator: users set <actor> — provision/reset with hidden password prompts",
         "users set <new-name> --like <template> — create a named account with an immutable role binding",
@@ -91,9 +93,30 @@ GUIDES = {
         "Password resets revoke that account's sessions; use independent credentials for reviewers.",
         "persona is only for explicitly enabled demo mode before accounts exist.",
     ],
+    "register": [
+        "Aegis sovereign accounts are provisioned locally on your machine (zero-egress, air-gapped).",
+        "Supported role templates: operator (default), data-owner, security-officer, model-custodian.",
+        "Interactive sign-up: type /register in the Aegis shell and follow the guided prompts.",
+        "Quick sign-up command: /register <username> [--like <role>]",
+        "Host admin provisioning: users set <username> --like operator",
+        "Passwords must be 12-256 characters and are securely prompted without screen echo.",
+        "After registration, authenticate your session using: /login <username>",
+        "Verify your authenticated identity and active clearance with: /whoami and /context",
+    ],
+    "goal": [
+        "Autonomous thorough goal execution inspired by Antigravity and Codex.",
+        "/goal <objective> — initialize a persistent goal with a structured milestone plan.",
+        "/goal — view active goal dashboard, progress bar, and milestone checklist.",
+        "/goal run — execute the current milestone using the selected coding lease.",
+        "/goal complete [number] — mark milestone or overall goal completed.",
+        "/goal add <milestone> — add custom milestone to the active goal.",
+        "/goal clear — reset the active goal and clear autonomous tracking.",
+    ],
 }
 
-CONTROL_TEXT = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+CONTROL_TEXT = re.compile(
+    r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]"
+)
 
 
 def terminal_text(value):
@@ -111,29 +134,88 @@ def doctor(client, error_type):
                 raise error_type("Server returned an unexpected diagnostic response")
             state, detail, next_step = inspect(result)
         except error_type as error:
-            state, detail, next_step = "UNAVAILABLE", str(error), "Check the local server/session, then retry doctor."
+            state, detail, next_step = (
+                "UNAVAILABLE",
+                str(error),
+                "Check the local server/session, then retry doctor.",
+            )
         checks.append({"check": name, "status": state, "detail": detail, "next_step": next_step})
 
-    check("accounts", "/auth/status", lambda r: (
-        "PASS" if r.get("configured") else "ATTENTION",
-        "Local accounts configured" if r.get("configured") else "No accounts; demo identity is not authentication",
-        "login <actor>" if r.get("configured") else "users set <actor>"), public=True)
-    check("local_api", "/coding/status", lambda r: (
-        "PASS" if r.get("enabled") else "ATTENTION", "Local API responded; this does not validate a model", "help coding"), public=True)
+    check(
+        "accounts",
+        "/auth/status",
+        lambda r: (
+            "PASS" if r.get("configured") else "ATTENTION",
+            "Local accounts configured"
+            if r.get("configured")
+            else "No accounts; demo identity is not authentication",
+            "login <actor>" if r.get("configured") else "users set <actor>",
+        ),
+        public=True,
+    )
+    check(
+        "local_api",
+        "/coding/status",
+        lambda r: (
+            "PASS" if r.get("enabled") else "ATTENTION",
+            "Local API responded; this does not validate a model",
+            "help coding",
+        ),
+        public=True,
+    )
     if client.session.value.get("access_token") or client.session.value.get("demo_persona"):
-        check("identity", "/auth/me", lambda r: ("PASS", f"{r.get('id')} / {r.get('role')}", "whoami"))
-        check("lockdown", "/security/lockdown", lambda r: (
-            "BLOCKED" if r.get("enabled") is True else "PASS" if r.get("enabled") is False else "ATTENTION",
-            "Execution stopped" if r.get("enabled") else "See generation when selecting a lease", "lockdown status"))
-        check("receipt_chain", "/control/receipts/verify", lambda r: (
-            "PASS" if r.get("is_valid") is True else "BLOCKED", r.get("status", "Unknown integrity"), "verify"))
-        check("image_decoder", "/media/capabilities", lambda r: (
-            "PASS" if r.get("image_decoder") else "ATTENTION",
-            "Decoder installed; model quality untested" if r.get("image_decoder") else "Pillow is not installed",
-            "Use the reviewed offline requirements-media.txt setup; media-capabilities for details."))
+        check(
+            "identity", "/auth/me", lambda r: ("PASS", f"{r.get('id')} / {r.get('role')}", "whoami")
+        )
+        check(
+            "lockdown",
+            "/security/lockdown",
+            lambda r: (
+                "BLOCKED"
+                if r.get("enabled") is True
+                else "PASS"
+                if r.get("enabled") is False
+                else "ATTENTION",
+                "Execution stopped"
+                if r.get("enabled")
+                else "See generation when selecting a lease",
+                "lockdown status",
+            ),
+        )
+        check(
+            "receipt_chain",
+            "/control/receipts/verify",
+            lambda r: (
+                "PASS" if r.get("is_valid") is True else "BLOCKED",
+                r.get("status", "Unknown integrity"),
+                "verify",
+            ),
+        )
+        check(
+            "image_decoder",
+            "/media/capabilities",
+            lambda r: (
+                "PASS" if r.get("image_decoder") else "ATTENTION",
+                "Decoder installed; model quality untested"
+                if r.get("image_decoder")
+                else "Pillow is not installed",
+                "Use the reviewed offline requirements-media.txt setup; media-capabilities for details.",
+            ),
+        )
     else:
-        checks.append({"check": "authenticated_checks", "status": "UNAVAILABLE",
-                       "detail": "Sign in to check identity, lockdown, receipts and image dependencies", "next_step": "login <actor>"})
-    return {"kind": "diagnostics", "status": "PASS" if all(c["status"] == "PASS" for c in checks) else "NEEDS_ATTENTION",
-            "api_url": client.url, "checks": checks, "model_calls": 0,
-            "scope": "Local application checks only; no model, firewall, backup or production assurance is inferred."}
+        checks.append(
+            {
+                "check": "authenticated_checks",
+                "status": "UNAVAILABLE",
+                "detail": "Sign in to check identity, lockdown, receipts and image dependencies",
+                "next_step": "login <actor>",
+            }
+        )
+    return {
+        "kind": "diagnostics",
+        "status": "PASS" if all(c["status"] == "PASS" for c in checks) else "NEEDS_ATTENTION",
+        "api_url": client.url,
+        "checks": checks,
+        "model_calls": 0,
+        "scope": "Local application checks only; no model, firewall, backup or production assurance is inferred.",
+    }

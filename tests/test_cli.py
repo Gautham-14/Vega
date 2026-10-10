@@ -1,16 +1,23 @@
 import io
-import json
-from pathlib import Path
-import subprocess
 import time
 from unittest.mock import Mock
 
 import pytest
+
 from aegis import cli
 
 
-@pytest.mark.parametrize("url", ["https://example.com/api", "http://localhost:8000/api", "http://127.0.0.1:0/api",
-    "http://127.0.0.1:8000/api?x=1", "http://user:pass@127.0.0.1/api", "http://127.0.0.1/elsewhere"])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/api",
+        "http://localhost:8000/api",
+        "http://127.0.0.1:0/api",
+        "http://127.0.0.1:8000/api?x=1",
+        "http://user:pass@127.0.0.1/api",
+        "http://127.0.0.1/elsewhere",
+    ],
+)
 def test_client_refuses_untrusted_origins(url):
     with pytest.raises(cli.CLIError):
         cli.canonical_url(url)
@@ -18,7 +25,11 @@ def test_client_refuses_untrusted_origins(url):
 
 def test_transport_includes_api_prefix_and_never_sends_identity_header_with_token(tmp_path):
     session = cli.SessionStore(cli.BASE_URL, tmp_path / "session")
-    session.value = {"access_token": "x" * 32, "expires_at": time.time() + 100, "demo_persona": "security-officer"}
+    session.value = {
+        "access_token": "x" * 32,
+        "expires_at": time.time() + 100,
+        "demo_persona": "security-officer",
+    }
     opener = Mock()
     opener.open.return_value = io.BytesIO(b'{"ok":true}')
     client = cli.Client(session=session, opener=opener)
@@ -45,21 +56,46 @@ def test_login_saves_session_but_never_returns_token(tmp_path, monkeypatch):
     session = cli.SessionStore(cli.BASE_URL, tmp_path / "private")
     client = cli.Client(session=session)
     monkeypatch.setattr(cli, "getpass", lambda prompt: "not-real-password")
-    client.call = Mock(return_value={"access_token": "x" * 32, "actor": "operator", "role": "Operator", "expires_at": time.time() + 100})
+    client.call = Mock(
+        return_value={
+            "access_token": "x" * 32,
+            "actor": "operator",
+            "role": "Operator",
+            "expires_at": time.time() + 100,
+        }
+    )
     result = client.login("operator")
     assert "access_token" not in result and "not-real-password" not in session.path.read_text()
     assert session.value["actor"] == "operator"
-    assert client.call.call_args.args == ("/auth/login", "POST", {"username": "operator", "password": "not-real-password"})
+    assert client.call.call_args.args == (
+        "/auth/login",
+        "POST",
+        {"username": "operator", "password": "not-real-password"},
+    )
 
 
 def test_command_payloads_match_backend_contracts():
     parser = cli.build_parser()
     client = Mock()
     cli.execute(parser.parse_args(["lease", "--repo", "REPO-1", "--capsule", "capsule-1"]), client)
-    assert client.call.call_args.args == ("/coding/leases", "POST", {"repository_id": "REPO-1", "capsule_id": "capsule-1",
-        "user": "operator", "mode": "PLAN", "minutes": 15, "allow_export": False})
+    assert client.call.call_args.args == (
+        "/coding/leases",
+        "POST",
+        {
+            "repository_id": "REPO-1",
+            "capsule_id": "capsule-1",
+            "user": "operator",
+            "mode": "PLAN",
+            "minutes": 15,
+            "allow_export": False,
+        },
+    )
     cli.execute(parser.parse_args(["activate", "capsule-1", "APPROVAL-1"]), client)
-    assert client.call.call_args.args == ("/control/capsules/capsule-1/approve", "POST", {"approval_id": "APPROVAL-1"})
+    assert client.call.call_args.args == (
+        "/control/capsules/capsule-1/approve",
+        "POST",
+        {"approval_id": "APPROVAL-1"},
+    )
     cli.execute(parser.parse_args(["receipts"]), client)
     assert client.call.call_args.args == ("/control/receipts",)
     for result in ({"status": "BLOCKED"}, {"all_passed": False}, {"is_valid": False}):
@@ -99,11 +135,26 @@ def test_run_requires_current_owned_live_lease(tmp_path):
     session = cli.SessionStore(cli.BASE_URL, tmp_path / "private")
     session.value = {"actor": "operator", "selected_lease": {"id": "LEASE-1", "actor": "operator"}}
     client = cli.Client(session=session)
-    client.call = Mock(side_effect=[{"id": "operator"}, {"id": "LEASE-1", "user": "operator", "mode": "PLAN",
-        "purpose": "code-planning", "expires_at": time.time() + 100},
-        {"enabled": False, "generation": 0}, {"status": "COMPLETED"}])
+    client.call = Mock(
+        side_effect=[
+            {"id": "operator"},
+            {
+                "id": "LEASE-1",
+                "user": "operator",
+                "mode": "PLAN",
+                "purpose": "code-planning",
+                "expires_at": time.time() + 100,
+            },
+            {"enabled": False, "generation": 0},
+            {"status": "COMPLETED"},
+        ]
+    )
     assert client.run("Plan change")["status"] == "COMPLETED"
-    assert client.call.call_args.args == ("/coding/tasks", "POST", {"lease_id": "LEASE-1", "prompt": "Plan change", "purpose": "code-planning"})
+    assert client.call.call_args.args == (
+        "/coding/tasks",
+        "POST",
+        {"lease_id": "LEASE-1", "prompt": "Plan change", "purpose": "code-planning"},
+    )
     client.call = Mock(side_effect=[{"id": "operator"}, {"user": "finance-operator"}])
     with pytest.raises(cli.CLIError, match="different account"):
         client.run("Plan change")

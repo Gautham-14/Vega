@@ -1,15 +1,23 @@
 """
 Aegis Models Package
 """
-from aegis.models.base import ModelAdapter, ModelRequest, ModelResponse, OllamaAdapter, LlamaCppAdapter, VLLMAdapter
+
+from aegis.models.base import (
+    LlamaCppAdapter,
+    ModelAdapter,
+    ModelRequest,
+    ModelResponse,
+    OllamaAdapter,
+    VLLMAdapter,
+)
 from aegis.models.mock_adapter import MockModelAdapter
 from aegis.models.registry import (
-    seed_model_registry,
     get_all_models,
     get_model_by_id,
     import_model_manifest,
+    run_shadow_mode_simulation,
     run_simulated_qualification,
-    run_shadow_mode_simulation
+    seed_model_registry,
 )
 
 __all__ = [
@@ -25,5 +33,5 @@ __all__ = [
     "get_model_by_id",
     "import_model_manifest",
     "run_simulated_qualification",
-    "run_shadow_mode_simulation"
+    "run_shadow_mode_simulation",
 ]

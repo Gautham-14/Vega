@@ -3,16 +3,20 @@ Aegis Sovereign AI Runtime - Industrial Context Firewall
 Inspects all incoming documents, prompts, RAG context, and files for prompt injections,
 hidden instructions, zero-width steganography, and malicious overrides.
 """
-import uuid
+
 import time
-from typing import Dict, Any, List, Optional
+import uuid
+from typing import Any, Dict, List
+
 from aegis.security.rules import INJECTION_PATTERNS, ZERO_WIDTH_CHARS
 from aegis.storage.database import execute_write, query_all
+
 
 class ContextFirewall:
     """
     Context Firewall enforcing strict distrust of all external context.
     """
+
     def __init__(self):
         self.patterns = INJECTION_PATTERNS
         self.zero_width_chars = ZERO_WIDTH_CHARS
@@ -27,45 +31,51 @@ class ContextFirewall:
         # AI STACK DEPTH: OT Boundary — IEC 62443 Data Diode
         # Ensure traffic originates only from read-only zones (simulated via regex for now)
         if "SCADA_WRITE" in text or "PLC_COMMAND" in text:
-            matched_rules.append({
-                "rule_id": "IEC-62443-DIODE-BLOCK",
-                "rule_name": "OT Boundary Violation: Data Diode Write Attempt",
-                "severity": "CRITICAL",
-                "description": "Blocked active WRITE attempt across OT boundary data diode.",
-                "matched_snippets": []
-            })
+            matched_rules.append(
+                {
+                    "rule_id": "IEC-62443-DIODE-BLOCK",
+                    "rule_name": "OT Boundary Violation: Data Diode Write Attempt",
+                    "severity": "CRITICAL",
+                    "description": "Blocked active WRITE attempt across OT boundary data diode.",
+                    "matched_snippets": [],
+                }
+            )
             highest_severity = "CRITICAL"
-
 
         # 0. Client-Side Data Loss Prevention (DLP)
         import re
+
         dlp_patterns = {
             "API_KEY": r"(?i)(sk-[a-zA-Z0-9]{20,}|Bearer\s[a-zA-Z0-9\-\.]{20,})",
             "IPV4_ADDR_OT": r"\b(?:10|192\.168|172\.(?:1[6-9]|2[0-9]|3[0-1]))\.\d{1,3}\.\d{1,3}\b",
-            "SSN_OR_CLASSIFIED": r"\b\d{3}-\d{2}-\d{4}\b|\bTOP-SECRET-\w+\b"
+            "SSN_OR_CLASSIFIED": r"\b\d{3}-\d{2}-\d{4}\b|\bTOP-SECRET-\w+\b",
         }
         for dlp_name, dlp_pattern in dlp_patterns.items():
             if re.search(dlp_pattern, text):
-                matched_rules.append({
-                    "rule_id": f"DLP-BLOCK-{dlp_name}",
-                    "rule_name": f"Data Loss Prevention: {dlp_name}",
-                    "severity": "CRITICAL",
-                    "description": "Sensitive internal data blocked by outbound DLP firewall from reaching remote inference.",
-                    "matched_snippets": ["[REDACTED]"]  # Do not store sensitive info
-                })
+                matched_rules.append(
+                    {
+                        "rule_id": f"DLP-BLOCK-{dlp_name}",
+                        "rule_name": f"Data Loss Prevention: {dlp_name}",
+                        "severity": "CRITICAL",
+                        "description": "Sensitive internal data blocked by outbound DLP firewall from reaching remote inference.",
+                        "matched_snippets": ["[REDACTED]"],  # Do not store sensitive info
+                    }
+                )
                 highest_severity = "CRITICAL"
 
         # 1. Check Regex Injection Patterns
         for rule in self.patterns:
             matches = rule["pattern"].findall(text)
             if matches:
-                matched_rules.append({
-                    "rule_id": rule["id"],
-                    "rule_name": rule["name"],
-                    "severity": rule["severity"],
-                    "description": rule["description"],
-                    "matched_snippets": [str(m) for m in matches[:3]]
-                })
+                matched_rules.append(
+                    {
+                        "rule_id": rule["id"],
+                        "rule_name": rule["name"],
+                        "severity": rule["severity"],
+                        "description": rule["description"],
+                        "matched_snippets": [str(m) for m in matches[:3]],
+                    }
+                )
                 if rule["severity"] == "CRITICAL":
                     highest_severity = "CRITICAL"
                 elif rule["severity"] == "HIGH" and highest_severity != "CRITICAL":
@@ -78,13 +88,15 @@ class ContextFirewall:
                 detected_hidden.append(self.zero_width_chars[char])
 
         if detected_hidden:
-            matched_rules.append({
-                "rule_id": "RULE-HIDDEN-001",
-                "rule_name": "Hidden Character Steganography",
-                "severity": "HIGH",
-                "description": f"Detected {len(detected_hidden)} hidden/zero-width characters.",
-                "matched_snippets": detected_hidden[:5]
-            })
+            matched_rules.append(
+                {
+                    "rule_id": "RULE-HIDDEN-001",
+                    "rule_name": "Hidden Character Steganography",
+                    "severity": "HIGH",
+                    "description": f"Detected {len(detected_hidden)} hidden/zero-width characters.",
+                    "matched_snippets": detected_hidden[:5],
+                }
+            )
             if highest_severity == "NONE":
                 highest_severity = "HIGH"
 
@@ -102,22 +114,27 @@ class ContextFirewall:
         if not is_safe:
             event_id = f"SEC-{uuid.uuid4().hex[:8]}"
             rule_names = ", ".join(r["rule_name"] for r in matched_rules)
-            execute_write("""
+            execute_write(
+                """
                 INSERT INTO security_events (
                     id, event_type, severity, description,
                     source_document, matched_rule, raw_payload,
                     action_taken, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, (
-                event_id,
-                "PROMPT_INJECTION" if any("INJ" in r["rule_id"] for r in matched_rules) else "HIDDEN_INSTRUCTION",
-                highest_severity,
-                f"Context Firewall blocked suspicious content from: {source_identifier}",
-                source_identifier,
-                rule_names,
-                None,  # Audit rule IDs, never confidential document or query text.
-                action
-            ))
+            """,
+                (
+                    event_id,
+                    "PROMPT_INJECTION"
+                    if any("INJ" in r["rule_id"] for r in matched_rules)
+                    else "HIDDEN_INSTRUCTION",
+                    highest_severity,
+                    f"Context Firewall blocked suspicious content from: {source_identifier}",
+                    source_identifier,
+                    rule_names,
+                    None,  # Audit rule IDs, never confidential document or query text.
+                    action,
+                ),
+            )
 
         return {
             "is_safe": is_safe,
@@ -127,7 +144,7 @@ class ContextFirewall:
             "matched_rules": matched_rules,
             "hidden_char_count": len(detected_hidden),
             "source": source_identifier,
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
 
     def scan_document(self, doc: Dict[str, Any]) -> Dict[str, Any]:
@@ -135,6 +152,7 @@ class ContextFirewall:
         filename = doc.get("filename", "unknown_doc")
         content = doc.get("content", "")
         return self.scan_text(content, source_identifier=filename)
+
 
 def get_recent_security_events(limit: int = 50) -> List[Dict[str, Any]]:
     """Retrieve security audit events."""

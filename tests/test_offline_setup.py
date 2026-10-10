@@ -2,13 +2,15 @@
 
 import hashlib
 import importlib.util
-from pathlib import Path
+import os
 import runpy
+from pathlib import Path
 
 import pytest
 
-
-verify_wheelhouse = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts" / "setup_offline.py"))["verify_wheelhouse"]
+verify_wheelhouse = runpy.run_path(
+    str(Path(__file__).resolve().parents[1] / "scripts" / "setup_offline.py")
+)["verify_wheelhouse"]
 
 
 def test_wheelhouse_manifest_requires_exact_matching_hashes(tmp_path):
@@ -38,6 +40,7 @@ def test_local_session_stops_its_server_when_cli_exits(monkeypatch):
 
     class Server:
         stopped = False
+        pid = 987654
 
         def poll(self):
             return 0 if self.stopped else None
@@ -54,5 +57,20 @@ def test_local_session_stops_its_server_when_cli_exits(monkeypatch):
     monkeypatch.setattr(launcher, "wait_for_server", lambda process: None)
     monkeypatch.setattr(launcher.subprocess, "Popen", lambda *args, **kwargs: server)
     monkeypatch.setattr(launcher.subprocess, "call", lambda *args, **kwargs: 7)
+
+    def cleanup(command, **kwargs):
+        assert os.name == "nt"
+        assert command == [
+            str(Path(os.environ["SystemRoot"]) / "System32" / "taskkill.exe"),
+            "/PID",
+            str(server.pid),
+            "/T",
+            "/F",
+        ]
+        assert kwargs == {"capture_output": True, "check": False}
+        server.stopped = True
+
+    # Never run a real process killer against a synthetic PID.
+    monkeypatch.setattr(launcher.subprocess, "run", cleanup)
     assert launcher.main([]) == 7
     assert server.stopped

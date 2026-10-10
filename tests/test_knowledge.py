@@ -1,19 +1,22 @@
 """
 Tests for Aegis Authority-Aware Knowledge Registry
 """
+
 import pytest
-from aegis.storage.database import init_db
+
 from aegis.knowledge.demo_data import seed_knowledge_registry
 from aegis.knowledge.registry import (
+    find_authoritative_document,
     get_all_documents,
-    get_document_by_filename,
-    find_authoritative_document
 )
+from aegis.storage.database import init_db
+
 
 @pytest.fixture(autouse=True)
 def setup_knowledge():
     init_db()
     seed_knowledge_registry()
+
 
 def test_knowledge_seeding():
     docs = get_all_documents()
@@ -24,11 +27,10 @@ def test_knowledge_seeding():
     assert "Pump_SOP_Rev8.txt" in filenames
     assert "P204_Vibration_Inspection_Report_2026_09.txt" in filenames
 
+
 def test_authority_aware_superseded_filtering():
     result = find_authoritative_document(
-        equipment_id="Pump P-204",
-        department="Engineering",
-        doc_family="Pump_SOP"
+        equipment_id="Pump P-204", department="Engineering", doc_family="Pump_SOP"
     )
 
     auth = result["authoritative_document"]

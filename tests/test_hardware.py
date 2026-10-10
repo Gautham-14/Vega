@@ -1,21 +1,25 @@
 """
 Tests for Aegis Hardware Detection, Simulation Profiles, and Scheduler
 """
+
 import pytest
-from aegis.storage.database import init_db
-from aegis.models.registry import seed_model_registry
+
 from aegis.hardware.detector import detect_hardware
+from aegis.hardware.scheduler import evaluate_model_eligibility, get_effective_hardware
 from aegis.hardware.simulation import (
+    get_active_hardware_profile_name,
     list_hardware_profiles,
     set_active_hardware_profile_name,
-    get_active_hardware_profile_name
 )
-from aegis.hardware.scheduler import get_effective_hardware, evaluate_model_eligibility
+from aegis.models.registry import seed_model_registry
+from aegis.storage.database import init_db
+
 
 @pytest.fixture(autouse=True)
 def setup_env():
     init_db()
     seed_model_registry()
+
 
 def test_hardware_detector():
     hw = detect_hardware()
@@ -25,6 +29,7 @@ def test_hardware_detector():
     assert "available_ram_mb" in hw
     assert "gpu" in hw
     assert hw["is_cpu_only_capable"] is True
+
 
 def test_hardware_simulation_profiles():
     profiles = list_hardware_profiles()
@@ -45,6 +50,7 @@ def test_hardware_simulation_profiles():
     # Switch back to REAL
     set_active_hardware_profile_name("REAL")
     assert get_active_hardware_profile_name() == "REAL"
+
 
 def test_resource_aware_eligibility():
     # In Edge mode (4GB RAM), huge 70B model should be INELIGIBLE

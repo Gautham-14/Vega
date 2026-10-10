@@ -1,5 +1,7 @@
 """CLI-only startup preserves telemetry and local documentation endpoints."""
+
 from starlette.testclient import TestClient
+
 from aegis.api.server import app
 
 

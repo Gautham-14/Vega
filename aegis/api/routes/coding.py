@@ -1,12 +1,14 @@
 """Authenticated local coding operations with an explicit account-free demo mode."""
+
 import os
 from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
-from aegis.security.auth import principal, demo_identity_enabled, configured
+
 from aegis.api.demo import require_demo_mode
 from aegis.coding import service
+from aegis.security.auth import configured, demo_identity_enabled, principal
 
 router = APIRouter(prefix="/api/coding", tags=["Governed coding prototype"])
 
@@ -53,11 +55,21 @@ class ExportRequest(Strict):
 @router.get("/status")
 def status():
     from aegis.coding import sandbox
+
     accounts = configured()
-    return {"enabled": accounts or demo_identity_enabled(), "identity": "AUTHENTICATED_LOCAL_ACCOUNTS" if accounts else "LOCAL_DEMO_PERSONAS_NOT_AUTHENTICATION",
-            "workspace": "ENCRYPTED_SNAPSHOTS", "shell": "ARBITRARY_SHELL_BLOCKED", "sandbox": sandbox.configuration(),
-            "semantic_search": None, "semantic_search_status": "AUTHENTICATED_CAPABILITIES_REQUIRED",
-            "ollama_configured": bool(os.environ.get("AEGIS_OLLAMA_MODEL")), "automatic_downloads": False}
+    return {
+        "enabled": accounts or demo_identity_enabled(),
+        "identity": "AUTHENTICATED_LOCAL_ACCOUNTS"
+        if accounts
+        else "LOCAL_DEMO_PERSONAS_NOT_AUTHENTICATION",
+        "workspace": "ENCRYPTED_SNAPSHOTS",
+        "shell": "ARBITRARY_SHELL_BLOCKED",
+        "sandbox": sandbox.configuration(),
+        "semantic_search": None,
+        "semantic_search_status": "AUTHENTICATED_CAPABILITIES_REQUIRED",
+        "ollama_configured": bool(os.environ.get("AEGIS_OLLAMA_MODEL")),
+        "automatic_downloads": False,
+    }
 
 
 @router.get("/state")
@@ -73,7 +85,9 @@ def repository(req: RepositoryRequest, identity=Depends(principal)):
 @router.post("/demo/repository")
 def fixture(identity=Depends(principal)):
     require_demo_mode()
-    return service.add_repository("Port validation sample", service.DEMO_FILES, "Engineering", "INTERNAL", identity)
+    return service.add_repository(
+        "Port validation sample", service.DEMO_FILES, "Engineering", "INTERNAL", identity
+    )
 
 
 @router.post("/capsules")
@@ -114,15 +128,24 @@ def revert(task_id: str, req: ApplyRequest, identity=Depends(principal)):
 @router.get("/sandbox")
 def sandbox_status(identity=Depends(principal)):
     from aegis.coding.sandbox import configuration
+
     return configuration()
 
 
 @router.get("/capabilities")
 def capabilities(identity=Depends(principal)):
-    from aegis.coding import retrieval, git_workspace, sandbox, tools
-    return {"modes": tools.MODES, "purposes": service.PURPOSES, "retrieval": retrieval.configuration(),
-            "git": git_workspace.configuration(), "sandbox": sandbox.configuration(),
-            "host_checkout_modified": False, "arbitrary_shell": False, "automatic_downloads": False}
+    from aegis.coding import git_workspace, retrieval, sandbox, tools
+
+    return {
+        "modes": tools.MODES,
+        "purposes": service.PURPOSES,
+        "retrieval": retrieval.configuration(),
+        "git": git_workspace.configuration(),
+        "sandbox": sandbox.configuration(),
+        "host_checkout_modified": False,
+        "arbitrary_shell": False,
+        "automatic_downloads": False,
+    }
 
 
 @router.post("/tasks/{task_id}/close")
@@ -143,6 +166,7 @@ def export(task_id: str, req: ExportRequest, identity=Depends(principal)):
 @router.post("/validation")
 def validation(identity=Depends(principal)):
     from aegis.control.self_test import run_self_test
+
     return run_self_test(include_coding=True)
 
 
@@ -164,6 +188,7 @@ def leases(identity=Depends(principal)):
 @router.get("/leases/{lease_id}")
 def get_lease(lease_id: str, identity=Depends(principal)):
     from fastapi import HTTPException
+
     for lease in service.state(identity)["leases"]:
         if lease["id"] == lease_id:
             return lease

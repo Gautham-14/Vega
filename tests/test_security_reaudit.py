@@ -1,13 +1,14 @@
 """Adversarial regressions for the second security review."""
+
 import base64
 import hashlib
-import json
 import io
+import json
 import os
-from pathlib import Path
+import shutil
 import sqlite3
 import subprocess
-import shutil
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -27,7 +28,16 @@ def initialize():
     store.init_control()
 
 
-@pytest.mark.parametrize("path", [r"\\server\share\secret", "//server/share/secret", r"\\?\C:\secret", "C:relative", "local:stream"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        r"\\server\share\secret",
+        "//server/share/secret",
+        r"\\?\C:\secret",
+        "C:relative",
+        "local:stream",
+    ],
+)
 def test_network_and_device_paths_rejected_before_filesystem_access(path):
     with patch.object(Path, "lstat", side_effect=AssertionError("Network path reached filesystem")):
         with pytest.raises(ValueError):
@@ -44,24 +54,34 @@ def test_hardlinks_cannot_alias_private_storage(tmp_path):
 
 def test_bundle_hashing_stops_when_file_grows(tmp_path):
     from aegis.security.offline_bundle import _sha256_file
+
     path = tmp_path / "weights.gguf"
     path.write_bytes(b"abc")
     info = path.stat()
+
     class GrowingFile(io.BytesIO):
         def fileno(self):
             return 123
-    with patch.object(Path, "open", return_value=GrowingFile(b"abcdef")), patch("os.fstat", return_value=info):
+
+    with (
+        patch.object(Path, "open", return_value=GrowingFile(b"abcdef")),
+        patch("os.fstat", return_value=info),
+    ):
         with pytest.raises(ValueError, match="grew"):
             _sha256_file(path, 3)
 
 
 def test_bundle_hashing_stops_on_unreadable_inventory(tmp_path):
-    from aegis.security.offline_bundle import verify_bundle
     from test_offline_bundle import bundle_fixture
+
+    from aegis.security.offline_bundle import verify_bundle
+
     root, trust, *_ = bundle_fixture(tmp_path)
+
     def failed_walk(*args, **kwargs):
         kwargs["onerror"](PermissionError("synthetic unreadable directory"))
         return iter(())
+
     with patch("os.walk", side_effect=failed_walk):
         with pytest.raises(ValueError, match="completely read"):
             verify_bundle(root, trust)
@@ -79,8 +99,12 @@ def test_tampered_approval_cannot_authorize_execution(change):
     if change == "seal":
         forged.pop("seal")
     else:
-        forged[change] = {"status": "PENDING", "binding": "f" * 64,
-                          "decisions": [], "required_roles": []}[change]
+        forged[change] = {
+            "status": "PENDING",
+            "binding": "f" * 64,
+            "decisions": [],
+            "required_roles": [],
+        }[change]
     store.put("approval", forged["id"], forged)
     with pytest.raises(store.Denied) as error:
         policy.approved(forged["id"], "export", binding)
@@ -103,7 +127,9 @@ def test_restore_rejects_database_triggers():
     auth.provision("operator", "synthetic-test-password")
     with sqlite3.connect(":memory:") as db:
         db.deserialize(recovery._db_snapshot())
-        db.execute("CREATE TRIGGER resurrect_session AFTER DELETE ON auth_sessions BEGIN INSERT INTO auth_sessions VALUES(OLD.token_hash, OLD.actor, OLD.expires_at, OLD.created_at); END")
+        db.execute(
+            "CREATE TRIGGER resurrect_session AFTER DELETE ON auth_sessions BEGIN INSERT INTO auth_sessions VALUES(OLD.token_hash, OLD.actor, OLD.expires_at, OLD.created_at); END"
+        )
         with pytest.raises(ValueError, match="executable schema"):
             recovery._valid_database(db.serialize(), store.secret())
 
@@ -117,7 +143,9 @@ def test_restore_revokes_sessions_and_execution_approvals(tmp_path):
     policy.decide(approval["id"], "security-officer", "APPROVE")
     store.put("capsule", "test-capsule", {"status": "APPROVED", "seal": "old"})
     store.put("provider-release", "test-release", {"status": "ACTIVE", "seal": "old"})
-    store.put("provider-release-candidate", "test-candidate", {"status": "REVIEW_REQUIRED", "seal": "old"})
+    store.put(
+        "provider-release-candidate", "test-candidate", {"status": "REVIEW_REQUIRED", "seal": "old"}
+    )
     archive = tmp_path.parent / (tmp_path.name + ".aegis-backup")
     recovery.create_backup(archive, "synthetic-backup-password")
     target = tmp_path.parent / (tmp_path.name + "-restored")
@@ -125,25 +153,43 @@ def test_restore_revokes_sessions_and_execution_approvals(tmp_path):
     assert result["sessions_revoked"] and result["execution_reapproval_required"]
     with sqlite3.connect(target / "db/aegis.db") as db:
         assert db.execute("SELECT count(*) FROM auth_sessions").fetchone()[0] == 0
-        for kind, raw in db.execute("SELECT kind,body FROM control_objects WHERE kind IN ('approval','capsule','provider-release','provider-release-candidate')"):
+        for kind, raw in db.execute(
+            "SELECT kind,body FROM control_objects WHERE kind IN ('approval','capsule','provider-release','provider-release-candidate')"
+        ):
             body = json.loads(raw)
             assert "seal" not in body and body["status"] != "APPROVED"
 
 
-@pytest.mark.parametrize("names", [
-    ["knowledge/C:escape"], ["knowledge/file:stream"], ["knowledge/NUL.txt"],
-    ["knowledge/trailing."], ["knowledge/Case.txt", "knowledge/case.txt"],
-    ["knowledge/file", "knowledge/file/child.txt"],
-])
+@pytest.mark.parametrize(
+    "names",
+    [
+        ["knowledge/C:escape"],
+        ["knowledge/file:stream"],
+        ["knowledge/NUL.txt"],
+        ["knowledge/trailing."],
+        ["knowledge/Case.txt", "knowledge/case.txt"],
+        ["knowledge/file", "knowledge/file/child.txt"],
+    ],
+)
 def test_authenticated_backup_cannot_authorize_unsafe_restore_paths(tmp_path, names):
     initialize()
     store.receipt("RESTORE_PATH_TEST")
     payload = json.loads(recovery._payload())
     data = b"synthetic fixture"
-    payload["files"] = {name: {"data": base64.b64encode(data).decode(), "sha256": hashlib.sha256(data).hexdigest()} for name in names}
+    payload["files"] = {
+        name: {"data": base64.b64encode(data).decode(), "sha256": hashlib.sha256(data).hexdigest()}
+        for name in names
+    }
     salt, nonce = os.urandom(16), os.urandom(12)
     password = "synthetic-backup-password"
-    encrypted = recovery.MAGIC + salt + nonce + AESGCM(recovery._key(password, salt)).encrypt(nonce, json.dumps(payload).encode(), recovery.MAGIC)
+    encrypted = (
+        recovery.MAGIC
+        + salt
+        + nonce
+        + AESGCM(recovery._key(password, salt)).encrypt(
+            nonce, json.dumps(payload).encode(), recovery.MAGIC
+        )
+    )
     archive = tmp_path / "crafted.aegis-backup"
     archive.write_bytes(encrypted)
     target = tmp_path / "restored"
@@ -165,6 +211,7 @@ def test_api_documentation_loads_no_vendor_assets():
 
 def test_wheel_install_pins_bytes_and_never_resolves_dependency_urls(tmp_path, monkeypatch):
     from scripts import setup_offline
+
     wheels = tmp_path / "wheels"
     wheels.mkdir()
     item = wheels / "fixture-1.0-py3-none-any.whl"
@@ -174,21 +221,40 @@ def test_wheel_install_pins_bytes_and_never_resolves_dependency_urls(tmp_path, m
     manifest.write_text(digest + "  " + item.name)
     monkeypatch.setenv("PIP_FIND_LINKS", "https://untrusted.invalid/wheels")
     calls = []
+
     def run(command, **kwargs):
         calls.append(command)
         assert "PIP_FIND_LINKS" not in kwargs["env"]
         if "install" in command:
-            assert all(flag in command for flag in ("--no-index", "--no-deps", "--require-hashes", "--isolated"))
+            assert all(
+                flag in command
+                for flag in ("--no-index", "--no-deps", "--require-hashes", "--isolated")
+            )
             lock = Path(command[command.index("-r") + 1]).read_text()
             assert item.as_uri() in lock and "--hash=sha256:" + digest in lock
+
     monkeypatch.setattr(setup_offline.subprocess, "run", run)
-    assert setup_offline.install_verified_wheels(Path("python"), wheels, manifest, cwd=tmp_path) == 1
+    assert (
+        setup_offline.install_verified_wheels(Path("python"), wheels, manifest, cwd=tmp_path) == 1
+    )
     assert calls[-1][-1] == "check"
     assert not list(tmp_path.glob(".aegis-wheel-lock-*"))
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows firewall script")
 def test_firewall_preflight_rejects_partially_scoped_rules():
-    subprocess.run([shutil.which("powershell"), "-NoProfile", "-NonInteractive", "-File",
-                    str(Path(__file__).with_name("firewall_scope_checks.ps1"))],
-                   check=True, capture_output=True, text=True, timeout=15)
+    subprocess.run(
+        [
+            shutil.which("powershell"),
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(Path(__file__).with_name("firewall_scope_checks.ps1")),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )

@@ -1,4 +1,5 @@
 """Bounded retrieval math. No weights, downloads, hidden indexes or shared state."""
+
 import math
 from collections import Counter
 
@@ -17,13 +18,18 @@ def bm25(documents, query_terms, *, k1=1.2, b=0.75):
         for index, row in enumerate(counts):
             tf = row[term]
             if tf:
-                scores[index] += weight * tf * (k1 + 1) / (tf + k1 * (1 - b + b * lengths[index] / average))
+                scores[index] += (
+                    weight * tf * (k1 + 1) / (tf + k1 * (1 - b + b * lengths[index] / average))
+                )
     return scores
 
 
 def normalized(vector):
-    if (not isinstance(vector, list) or not 1 <= len(vector) <= 4096
-            or any(type(v) not in (int, float) or not math.isfinite(v) for v in vector)):
+    if (
+        not isinstance(vector, list)
+        or not 1 <= len(vector) <= 4096
+        or any(type(v) not in (int, float) or not math.isfinite(v) for v in vector)
+    ):
         raise ValueError("Invalid finite dense vector")
     norm = math.hypot(*vector)
     if not math.isfinite(norm) or norm == 0:
@@ -38,15 +44,23 @@ def dense_rank(query, documents, *, coarse_dimension=None, reviewed_dimensions=(
     dimension explicitly reviewed as trained into the selected embedding model.
     """
     query = normalized(query)
-    if not isinstance(documents, list) or len(documents) > 384 or type(candidates) is not int or not 1 <= candidates <= 384:
+    if (
+        not isinstance(documents, list)
+        or len(documents) > 384
+        or type(candidates) is not int
+        or not 1 <= candidates <= 384
+    ):
         raise ValueError("Dense candidate limits exceeded")
     rows = [normalized(row) for row in documents]
     if any(len(row) != len(query) for row in rows):
         raise ValueError("Dense model dimensions differ")
     indices = list(range(len(rows)))
     if coarse_dimension is not None:
-        if (type(coarse_dimension) is not int or coarse_dimension not in reviewed_dimensions
-                or not 1 <= coarse_dimension <= len(query)):
+        if (
+            type(coarse_dimension) is not int
+            or coarse_dimension not in reviewed_dimensions
+            or not 1 <= coarse_dimension <= len(query)
+        ):
             raise ValueError("Coarse dimensions require a reviewed MRL-trained model")
         coarse_query = normalized(query[:coarse_dimension])
         coarse_rows = [normalized(row[:coarse_dimension]) for row in rows]

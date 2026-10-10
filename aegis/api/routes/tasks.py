@@ -1,14 +1,18 @@
 """
 Aegis Sovereign AI Runtime - Tasks API Route
 """
+
+from typing import Any, Dict, List, Literal
+
 from fastapi import APIRouter, HTTPException
-from typing import Dict, Any, List, Literal
 from pydantic import BaseModel
-from aegis.runtime.task_runner import TaskRunner, get_all_tasks, get_task_by_id
+
 from aegis.api.demo import require_demo_mode
+from aegis.runtime.task_runner import TaskRunner, get_all_tasks, get_task_by_id
 
 router = APIRouter(prefix="/api/tasks", tags=["Tasks"])
 runner = TaskRunner()
+
 
 class DemoTaskRequest(BaseModel):
     include_poisoned_patch: bool = True
@@ -18,9 +22,11 @@ class DemoTaskRequest(BaseModel):
     operator_role: str = "Reliability_Engineer"
     user_clearance: Literal["INTERNAL", "RESTRICTED", "CONFIDENTIAL"] = "INTERNAL"
 
+
 @router.get("")
 def list_tasks() -> List[Dict[str, Any]]:
     return get_all_tasks()
+
 
 @router.get("/{task_id}")
 def get_task(task_id: str) -> Dict[str, Any]:
@@ -28,6 +34,7 @@ def get_task(task_id: str) -> Dict[str, Any]:
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
 
 @router.post("/demo")
 def run_demo_task(req: DemoTaskRequest) -> Dict[str, Any]:
@@ -39,7 +46,7 @@ def run_demo_task(req: DemoTaskRequest) -> Dict[str, Any]:
             department=req.department,
             equipment_id=req.equipment_id,
             operator_role=req.operator_role,
-            user_clearance=req.user_clearance
+            user_clearance=req.user_clearance,
         )
         return result
     except (ValueError, RuntimeError) as e:

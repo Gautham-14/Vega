@@ -1,54 +1,106 @@
 """Deterministic skills, labels, role simulation and bounded approval decisions."""
-import re
-import time
+
 import json
 import logging
-import hmac
+import re
+import time
 from pathlib import Path
-from aegis.control.store import Denied, LOCK, digest, require, put, receipt, uid, sign, verify_signature, get
+
+from aegis.control.store import (
+    LOCK,
+    Denied,
+    digest,
+    get,
+    put,
+    receipt,
+    require,
+    sign,
+    uid,
+    verify_signature,
+)
 
 POLICY_VERSION = "aegis-prototype-2"
 COMPARTMENTS = ["Engineering", "Maintenance", "Finance", "HR", "Public"]
 LEVELS = {"PUBLIC": 0, "INTERNAL": 1, "RESTRICTED": 2, "CONFIDENTIAL": 3}
 # Built-in local account templates; API callers never supply their own roles.
 ACTORS = {
-    "operator": {"role": "Operator", "compartments": ["Engineering", "Maintenance", "Public"], "clearance": "INTERNAL"},
-    "finance-operator": {"role": "Operator", "compartments": ["Finance", "Public"], "clearance": "CONFIDENTIAL"},
-    "hr-operator": {"role": "Operator", "compartments": ["HR", "Public"], "clearance": "CONFIDENTIAL"},
+    "operator": {
+        "role": "Operator",
+        "compartments": ["Engineering", "Maintenance", "Public"],
+        "clearance": "INTERNAL",
+    },
+    "finance-operator": {
+        "role": "Operator",
+        "compartments": ["Finance", "Public"],
+        "clearance": "CONFIDENTIAL",
+    },
+    "hr-operator": {
+        "role": "Operator",
+        "compartments": ["HR", "Public"],
+        "clearance": "CONFIDENTIAL",
+    },
     "model-custodian": {"role": "Model Custodian", "compartments": [], "clearance": "PUBLIC"},
-    "security-officer": {"role": "Security Officer", "compartments": COMPARTMENTS, "clearance": "CONFIDENTIAL"},
+    "security-officer": {
+        "role": "Security Officer",
+        "compartments": COMPARTMENTS,
+        "clearance": "CONFIDENTIAL",
+    },
     "data-owner": {"role": "Data Owner", "compartments": COMPARTMENTS, "clearance": "CONFIDENTIAL"},
     "key-custodian": {"role": "Key Custodian", "compartments": [], "clearance": "PUBLIC"},
     "auditor": {"role": "Auditor", "compartments": [], "clearance": "PUBLIC"},
 }
 SKILLS = {
-    "inspection-review-v3": {"name": "Inspection review", "version": 3,
-        "task_types": ["inspection"], "purposes": ["maintenance-risk-assessment"],
+    "inspection-review-v3": {
+        "name": "Inspection review",
+        "version": 3,
+        "task_types": ["inspection"],
+        "purposes": ["maintenance-risk-assessment"],
         "tools": ["search", "calculator", "report", "telemetry"],
         "data_classes": ["PUBLIC", "INTERNAL", "RESTRICTED", "CONFIDENTIAL"],
-        "compartments": ["Engineering", "Maintenance"], "output_types": ["approval-note"],
-        "export": "local-recipient-only", "evidence": "authorized-current-source",
-        "approval": "high-classification-or-combined"},
-    "document-review-v1": {"name": "Document review", "version": 1,
-        "task_types": ["review"], "purposes": ["document-review"],
-        "tools": ["search", "report"], "data_classes": list(LEVELS),
-        "compartments": COMPARTMENTS, "output_types": ["summary"],
-        "export": "local-recipient-only", "evidence": "authorized-current-source",
-        "approval": "high-classification-or-combined"},
-    "ot-advisory-v1": {"name": "OT advisory", "version": 1,
-        "task_types": ["telemetry", "action"], "purposes": ["ot-monitoring"],
-        "tools": ["telemetry", "report", "record-note", "ot-write"], "data_classes": ["PUBLIC", "INTERNAL"],
-        "compartments": ["Engineering", "Maintenance"], "output_types": ["advisory"],
-        "export": "local-recipient-only", "evidence": "authorized-current-source",
-        "approval": "all-physical-actions"},
+        "compartments": ["Engineering", "Maintenance"],
+        "output_types": ["approval-note"],
+        "export": "local-recipient-only",
+        "evidence": "authorized-current-source",
+        "approval": "high-classification-or-combined",
+    },
+    "document-review-v1": {
+        "name": "Document review",
+        "version": 1,
+        "task_types": ["review"],
+        "purposes": ["document-review"],
+        "tools": ["search", "report"],
+        "data_classes": list(LEVELS),
+        "compartments": COMPARTMENTS,
+        "output_types": ["summary"],
+        "export": "local-recipient-only",
+        "evidence": "authorized-current-source",
+        "approval": "high-classification-or-combined",
+    },
+    "ot-advisory-v1": {
+        "name": "OT advisory",
+        "version": 1,
+        "task_types": ["telemetry", "action"],
+        "purposes": ["ot-monitoring"],
+        "tools": ["telemetry", "report", "record-note", "ot-write"],
+        "data_classes": ["PUBLIC", "INTERNAL"],
+        "compartments": ["Engineering", "Maintenance"],
+        "output_types": ["advisory"],
+        "export": "local-recipient-only",
+        "evidence": "authorized-current-source",
+        "approval": "all-physical-actions",
+    },
 }
 
 # Local extensions cannot override built-in security policy or add tool authority.
-_skills_dir = Path(__file__).resolve().parent.parent.parent / "SKILLS"
+_skills_dir = Path(__file__).resolve().parent.parent / "assets" / "skills"
 if _skills_dir.is_dir() and not _skills_dir.is_symlink():
     for _skill_file in sorted(_skills_dir.glob("*.json"))[:32]:
         try:
-            if _skill_file.stem in SKILLS or _skill_file.is_symlink() or _skill_file.stat().st_size > 16000:
+            if (
+                _skill_file.stem in SKILLS
+                or _skill_file.is_symlink()
+                or _skill_file.stat().st_size > 16000
+            ):
                 raise ValueError("Invalid extension file")
             with open(_skill_file, "r", encoding="utf-8") as _f:
                 _skill_data = json.load(_f)
@@ -61,16 +113,23 @@ if _skills_dir.is_dir() and not _skills_dir.is_symlink():
                 if _field == "version":
                     continue
                 if isinstance(template[_field], list):
-                    if not isinstance(_value, list) or not 1 <= len(_value) <= 16 or any(not isinstance(v, str) or not 1 <= len(v) <= 120 for v in _value):
+                    if (
+                        not isinstance(_value, list)
+                        or not 1 <= len(_value) <= 16
+                        or any(not isinstance(v, str) or not 1 <= len(v) <= 120 for v in _value)
+                    ):
                         raise ValueError("Invalid skill list")
                 elif not isinstance(_value, str) or not 1 <= len(_value) <= 120:
                     raise ValueError("Invalid skill value")
-            if (not set(_skill_data["tools"]) <= {"search", "calculator", "report", "telemetry"}
-                    or not set(_skill_data["data_classes"]) <= set(LEVELS)
-                    or not set(_skill_data["compartments"]) <= set(COMPARTMENTS)
-                    or _skill_data["export"] != "local-recipient-only"
-                    or _skill_data["evidence"] != "authorized-current-source"
-                    or _skill_data["approval"] not in {"all-physical-actions", "high-classification-or-combined"}):
+            if (
+                not set(_skill_data["tools"]) <= {"search", "calculator", "report", "telemetry"}
+                or not set(_skill_data["data_classes"]) <= set(LEVELS)
+                or not set(_skill_data["compartments"]) <= set(COMPARTMENTS)
+                or _skill_data["export"] != "local-recipient-only"
+                or _skill_data["evidence"] != "authorized-current-source"
+                or _skill_data["approval"]
+                not in {"all-physical-actions", "high-classification-or-combined"}
+            ):
                 raise ValueError("Invalid extension authority")
             SKILLS[_skill_file.stem] = _skill_data
         except Exception:
@@ -98,9 +157,14 @@ def actor(identity, roles=None):
         profile = get("account-profile", identity)
         if profile:
             body = {key: item for key, item in profile.items() if key != "seal"}
-            if (body.get("id") != identity or not isinstance(profile.get("seal"), str)
-                    or not verify_signature(body, "account-profile-v1", profile["seal"])):
-                raise Denied("ACCOUNT_PROFILE_INTEGRITY_FAILURE", "Local account role binding changed")
+            if (
+                body.get("id") != identity
+                or not isinstance(profile.get("seal"), str)
+                or not verify_signature(body, "account-profile-v1", profile["seal"])
+            ):
+                raise Denied(
+                    "ACCOUNT_PROFILE_INTEGRITY_FAILURE", "Local account role binding changed"
+                )
             value = ACTORS.get(body.get("template"))
     if not value or (roles and value["role"] not in roles):
         raise Denied("UNAUTHORIZED_ROLE", "This persona cannot perform the action")
@@ -109,7 +173,9 @@ def actor(identity, roles=None):
 
 def classify(prompt, documents):
     words = prompt.lower()
-    if re.search(r"\b(write|shutdown|shut down|start|stop|actuate|open valve|close valve|setpoint)\b", words):
+    if re.search(
+        r"\b(write|shutdown|shut down|start|stop|actuate|open valve|close valve|setpoint)\b", words
+    ):
         kind, skill, purpose = "action", "ot-advisory-v1", "ot-monitoring"
     elif re.search(r"\b(telemetry|sensor|readings)\b", words):
         kind, skill, purpose = "telemetry", "ot-advisory-v1", "ot-monitoring"
@@ -119,18 +185,35 @@ def classify(prompt, documents):
         kind, skill, purpose = "review", "document-review-v1", "document-review"
     compartments = sorted({d["compartment"] for d in documents})
     sensitivity = max((d["classification"] for d in documents), key=LEVELS.get, default="PUBLIC")
-    return {"task_type": kind, "purpose": purpose, "skill": skill,
-            "source_ids": [d["id"] for d in documents], "compartments": compartments,
-            "sensitivity": sensitivity, "export_expected": bool(re.search(r"export|report|note|summary", words)),
-            "human_approval_required": kind == "action" or LEVELS[sensitivity] >= 2 or len(compartments) > 1,
-            "read_only": kind != "action", "authority": "DETERMINISTIC_POLICY"}
+    return {
+        "task_type": kind,
+        "purpose": purpose,
+        "skill": skill,
+        "source_ids": [d["id"] for d in documents],
+        "compartments": compartments,
+        "sensitivity": sensitivity,
+        "export_expected": bool(re.search(r"export|report|note|summary", words)),
+        "human_approval_required": kind == "action"
+        or LEVELS[sensitivity] >= 2
+        or len(compartments) > 1,
+        "read_only": kind != "action",
+        "authority": "DETERMINISTIC_POLICY",
+    }
 
 
 def label(documents, kind="generated-summary"):
-    return {"compartments": sorted({c for d in documents for c in d.get("compartments", [d.get("compartment")]) if c}),
-            "classification": max((d["classification"] for d in documents), key=LEVELS.get, default="PUBLIC"),
-            "source_ids": sorted({s for d in documents for s in d.get("source_ids", [d.get("id")]) if s}),
-            "kind": kind}
+    return {
+        "compartments": sorted(
+            {c for d in documents for c in d.get("compartments", [d.get("compartment")]) if c}
+        ),
+        "classification": max(
+            (d["classification"] for d in documents), key=LEVELS.get, default="PUBLIC"
+        ),
+        "source_ids": sorted(
+            {s for d in documents for s in d.get("source_ids", [d.get("id")]) if s}
+        ),
+        "kind": kind,
+    }
 
 
 def authorize_label(identity, value):
@@ -146,10 +229,20 @@ def request_approval(action, binding, requester):
     if action not in APPROVAL_ROLES:
         raise Denied("INVALID_APPROVAL", "Unknown approval action")
     identity = uid("APR")
-    value = {"id": identity, "action": action, "binding": digest(binding), "requester": requester,
-             "required_roles": list(APPROVAL_ROLES[action]), "decisions": [], "status": "PENDING",
-             "created_at": time.time(), "expires_at": time.time() + 900}
-    value["receipt_id"] = receipt("APPROVAL_REQUESTED", requester, approval_id=identity, approval_action=action)["id"]
+    value = {
+        "id": identity,
+        "action": action,
+        "binding": digest(binding),
+        "requester": requester,
+        "required_roles": list(APPROVAL_ROLES[action]),
+        "decisions": [],
+        "status": "PENDING",
+        "created_at": time.time(),
+        "expires_at": time.time() + 900,
+    }
+    value["receipt_id"] = receipt(
+        "APPROVAL_REQUESTED", requester, approval_id=identity, approval_action=action
+    )["id"]
     return _save_approval(value)
 
 
@@ -162,10 +255,17 @@ def _save_approval(value):
 def _read_approval(identity):
     value = require("approval", identity)
     body = {k: v for k, v in value.items() if k != "seal"}
-    if (value.get("id") != identity or not isinstance(value.get("seal"), str)
-            or not verify_signature(body, "approval-v1", value["seal"])
-            or value.get("required_roles") != list(APPROVAL_ROLES.get(value.get("action"), ()))):
-        raise Denied("APPROVAL_INTEGRITY_FAILURE", "Approval changed or predates authenticated approvals; request a new review", identity)
+    if (
+        value.get("id") != identity
+        or not isinstance(value.get("seal"), str)
+        or not verify_signature(body, "approval-v1", value["seal"])
+        or value.get("required_roles") != list(APPROVAL_ROLES.get(value.get("action"), ()))
+    ):
+        raise Denied(
+            "APPROVAL_INTEGRITY_FAILURE",
+            "Approval changed or predates authenticated approvals; request a new review",
+            identity,
+        )
     return value
 
 
@@ -173,17 +273,34 @@ def decide(identity, approver, decision):
     with LOCK:
         value = _read_approval(identity)
         person = actor(approver, value["required_roles"])
-        if (value["status"] != "PENDING" or value["expires_at"] <= time.time()
-                or approver == value["requester"] or any(d["actor"] == approver for d in value["decisions"])):
-            raise Denied("INVALID_APPROVAL", "Approval is closed, expired, repeated, or self-approved", identity)
+        if (
+            value["status"] != "PENDING"
+            or value["expires_at"] <= time.time()
+            or approver == value["requester"]
+            or any(d["actor"] == approver for d in value["decisions"])
+        ):
+            raise Denied(
+                "INVALID_APPROVAL",
+                "Approval is closed, expired, repeated, or self-approved",
+                identity,
+            )
         if decision not in {"APPROVE", "REJECT"}:
             raise ValueError("Invalid decision")
-        value["decisions"].append({"actor": approver, "role": person["role"], "decision": decision, "timestamp": time.time()})
+        value["decisions"].append(
+            {
+                "actor": approver,
+                "role": person["role"],
+                "decision": decision,
+                "timestamp": time.time(),
+            }
+        )
         if decision == "REJECT":
             value["status"] = "REJECTED"
         elif set(value["required_roles"]).issubset({d["role"] for d in value["decisions"]}):
             value["status"] = "APPROVED"
-        value["receipt_id"] = receipt("APPROVAL_DECISION", approver, approval_id=identity, decision=decision)["id"]
+        value["receipt_id"] = receipt(
+            "APPROVAL_DECISION", approver, approval_id=identity, decision=decision
+        )["id"]
         return _save_approval(value)
 
 
@@ -191,16 +308,26 @@ def approved(identity, action, binding):
     if not identity:
         return False
     value = _read_approval(identity)
-    return (value["status"] == "APPROVED" and value["action"] == action
-            and value["binding"] == digest(binding) and value["expires_at"] > time.time())
+    return (
+        value["status"] == "APPROVED"
+        and value["action"] == action
+        and value["binding"] == digest(binding)
+        and value["expires_at"] > time.time()
+    )
 
 
 def tool_guard(skill_id, tool, approval_id=None, binding=None):
     skill = SKILLS.get(skill_id)
     if not skill or tool not in skill["tools"]:
         raise Denied("UNAUTHORIZED_TOOL", "Tool is outside the active skill")
-    risk = {"telemetry": "read-only", "search": "read-only", "calculator": "read-only",
-            "report": "advisory", "record-note": "low-risk approved action", "ot-write": "high-risk physical action"}[tool]
+    risk = {
+        "telemetry": "read-only",
+        "search": "read-only",
+        "calculator": "read-only",
+        "report": "advisory",
+        "record-note": "low-risk approved action",
+        "ot-write": "high-risk physical action",
+    }[tool]
     if tool == "ot-write" and not approved(approval_id, "ot-write", binding):
         raise Denied("UNAUTHORIZED_HIGH_RISK_ACTION", "Explicit bound human approval required")
     return {"tool": tool, "risk": risk, "mode": "SIMULATED_NO_PHYSICAL_CONNECTION"}

@@ -1,6 +1,6 @@
-import sys
 import os
 import subprocess
+import sys
 
 import pytest
 from starlette.testclient import TestClient
@@ -12,7 +12,9 @@ from aegis.api.server import app
 @pytest.mark.parametrize("host", ["0.0.0.0", "::", "example.com", "192.168.1.10"])
 def test_launcher_rejects_non_loopback_binding(monkeypatch, host):
     monkeypatch.setattr(sys, "argv", ["run_aegis.py", "--host", host])
-    monkeypatch.setattr(run_aegis.uvicorn, "run", lambda *args, **kwargs: pytest.fail("server started"))
+    monkeypatch.setattr(
+        run_aegis.uvicorn, "run", lambda *args, **kwargs: pytest.fail("server started")
+    )
     with pytest.raises(SystemExit) as result:
         run_aegis.main()
     assert result.value.code == 2
@@ -38,4 +40,6 @@ with TestClient(app) as client:
     assert client.get('/health').json()['deployment_mode'] == 'LOCAL'
     assert client.get('/api/coding/state').status_code == 401
 """
-    subprocess.run([sys.executable, "-c", script], env=env, check=True, capture_output=True, text=True)
+    subprocess.run(
+        [sys.executable, "-c", script], env=env, check=True, capture_output=True, text=True
+    )

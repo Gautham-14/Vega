@@ -1,7 +1,7 @@
 """Governed policy updates, default-off learning and the simulated OT/network boundary."""
-from aegis.control import packages
-from aegis.control.policy import actor, approved, tool_guard, POLICY_VERSION
-from aegis.control.store import Denied, require, get, put, receipt
+
+from aegis.control.policy import POLICY_VERSION, actor, approved
+from aegis.control.store import Denied, put, receipt, require
 
 
 def network_call(destination):
@@ -30,15 +30,30 @@ def learning_plan(spec, identity):
         source = require("source", source_id)
         if source["status"] != "CURRENT_APPROVED" or source["compartment"] != spec["compartment"]:
             raise Denied("LEARNING_DISABLED", "Dataset and compartment are not approved")
-    if not spec["source_ids"] or spec["purpose"] != "governed-training" or not approved(spec["approval_id"], "learning", binding):
-        raise Denied("LEARNING_DISABLED", "Learning requires explicit dataset and purpose authorization")
+    if (
+        not spec["source_ids"]
+        or spec["purpose"] != "governed-training"
+        or not approved(spec["approval_id"], "learning", binding)
+    ):
+        raise Denied(
+            "LEARNING_DISABLED", "Learning requires explicit dataset and purpose authorization"
+        )
     capsule = require("capsule", spec["new_capsule_id"])
     old = require("capsule", spec["previous_capsule_id"])
-    if (capsule["status"] != "APPROVED" or capsule["id"] == old["id"]
-            or capsule["components"]["adapter"] != spec["adapter_id"]
-            or capsule["components"]["adapter"] == old["components"]["adapter"]):
-        raise Denied("LEARNING_DISABLED", "A separate adapter and newly approved Capsule are required")
-    result = {"status": "AUTHORIZED_FUTURE_PLAN_ONLY", "training_executed": False,
-              "automatic_chat_learning": False, "persistent_memory": False}
+    if (
+        capsule["status"] != "APPROVED"
+        or capsule["id"] == old["id"]
+        or capsule["components"]["adapter"] != spec["adapter_id"]
+        or capsule["components"]["adapter"] == old["components"]["adapter"]
+    ):
+        raise Denied(
+            "LEARNING_DISABLED", "A separate adapter and newly approved Capsule are required"
+        )
+    result = {
+        "status": "AUTHORIZED_FUTURE_PLAN_ONLY",
+        "training_executed": False,
+        "automatic_chat_learning": False,
+        "persistent_memory": False,
+    }
     receipt("LEARNING_PLAN_REVIEWED", identity, **binding, **result)
     return result

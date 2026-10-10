@@ -1,11 +1,11 @@
 """Security boundaries, migration, rollback and resource exhaustion regressions."""
+
 import base64
 import hashlib
 import json
 import socket
 import struct
 import time
-from pathlib import Path
 
 import pytest
 from cryptography.fernet import InvalidToken
@@ -14,10 +14,19 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from aegis import config
 from aegis.control import store
-from aegis.security import auth, audit_anchor, availability, deployment, key_custody, lockdown, local_rpc, quiescence, recovery
-from aegis.storage.database import init_db, get_db_connection, query_one
+from aegis.security import (
+    audit_anchor,
+    auth,
+    availability,
+    deployment,
+    key_custody,
+    local_rpc,
+    lockdown,
+    quiescence,
+    recovery,
+)
+from aegis.storage.database import get_db_connection, init_db, query_one
 from scripts import release_security
 
 
@@ -49,7 +58,9 @@ def test_keyring_migration_rotation_and_restore(tmp_path):
     store.receipt("ROTATED_HEAD")
     archive = tmp_path.parent / (tmp_path.name + ".aegis-backup")
     recovery.create_backup(archive, "synthetic-backup-passphrase")
-    result = recovery.drill_backup(archive, tmp_path.parent / (tmp_path.name + "-restore"), "synthetic-backup-passphrase")
+    result = recovery.drill_backup(
+        archive, tmp_path.parent / (tmp_path.name + "-restore"), "synthetic-backup-passphrase"
+    )
     assert result["receipt_chain_verified"] and result["sessions_revoked"]
 
 
@@ -97,8 +108,10 @@ def test_witness_detects_database_rollback(tmp_path, monkeypatch):
     installation = "a" * 32
     witness.enroll(installation)
     monkeypatch.setenv("AEGIS_AUDIT_WITNESS_SOCKET", "/run/mock.sock")
+
     def remote(op, **kwargs):
         return witness.dispatch({"operation": op, "installation": installation, **kwargs})
+
     monkeypatch.setattr(audit_anchor, "remote", remote)
     store.receipt("FIRST")
     with get_db_connection() as conn:
@@ -114,7 +127,9 @@ def test_witness_detects_database_rollback(tmp_path, monkeypatch):
     with get_db_connection() as conn:
         conn.execute("DELETE FROM control_receipts")
         conn.execute("DELETE FROM control_head")
-        conn.executemany("INSERT INTO control_receipts VALUES(?,?,?,?)", [tuple(row) for row in old_rows])
+        conn.executemany(
+            "INSERT INTO control_receipts VALUES(?,?,?,?)", [tuple(row) for row in old_rows]
+        )
         conn.execute("INSERT INTO control_head VALUES(?,?,?,?)", tuple(old_head))
     assert not store.verify_chain(record_failure=False)["is_valid"]
     with pytest.raises(RuntimeError, match="rolled-back"):
@@ -126,8 +141,11 @@ def test_witness_refuses_non_monotonic_updates(tmp_path, attack):
     witness = audit_anchor.Witness(tmp_path / "witness.db")
     installation = "a" * 32
     witness.enroll(installation)
-    request = {"operation": "advance", "installation": installation,
-               "commitments": [{"sequence": 1, "hash": "b" * 64, "previous": audit_anchor.ZERO}]}
+    request = {
+        "operation": "advance",
+        "installation": installation,
+        "commitments": [{"sequence": 1, "hash": "b" * 64, "previous": audit_anchor.ZERO}],
+    }
     witness.dispatch(request)
     item = {"sequence": 2, "hash": "c" * 64, "previous": "b" * 64}
     if attack == "gap":
@@ -163,9 +181,14 @@ def test_mfa_login_replay_step_up_and_session_cap(monkeypatch):
         auth.login("security-officer", "synthetic-test-password", "local", code)
     for _ in range(4):
         now += 30
-        auth.login("security-officer", "synthetic-test-password", "local", auth.totp(seed, int(now // 30)))
+        auth.login(
+            "security-officer", "synthetic-test-password", "local", auth.totp(seed, int(now // 30))
+        )
     assert len(auth.session_inventory("security-officer")) == auth.MAX_SESSIONS
-    assert not query_one("SELECT * FROM auth_sessions WHERE token_hash=?", (hashlib.sha256(session["access_token"].encode()).hexdigest(),))
+    assert not query_one(
+        "SELECT * FROM auth_sessions WHERE token_hash=?",
+        (hashlib.sha256(session["access_token"].encode()).hexdigest(),),
+    )
 
 
 def test_totp_standard_hotp_vector():
@@ -174,8 +197,17 @@ def test_totp_standard_hotp_vector():
     assert auth.totp(seed, 1) == "287082"
 
 
-@pytest.mark.parametrize("timestamp,expected", [(59, "287082"), (1111111109, "081804"),
-    (1111111111, "050471"), (1234567890, "005924"), (2000000000, "279037"), (20000000000, "353130")])
+@pytest.mark.parametrize(
+    "timestamp,expected",
+    [
+        (59, "287082"),
+        (1111111109, "081804"),
+        (1111111111, "050471"),
+        (1234567890, "005924"),
+        (2000000000, "279037"),
+        (20000000000, "353130"),
+    ],
+)
 def test_totp_rfc6238_vectors(timestamp, expected):
     seed = base64.b32encode(b"12345678901234567890").decode()
     assert auth.totp(seed, timestamp // 30) == expected
@@ -214,8 +246,12 @@ def test_mfa_step_up_replay_and_throttle(monkeypatch):
     seed = auth.enroll_mfa("operator")["secret"]
     now = float(int(time.time() // 30) * 30 + 5)
     monkeypatch.setattr(auth.time, "time", lambda: now)
-    session = auth.login("operator", "synthetic-test-password", "local", auth.totp(seed, int(now // 30)))
-    request = Request({"type": "http", "method": "POST", "path": "/api/auth/step-up", "headers": []})
+    session = auth.login(
+        "operator", "synthetic-test-password", "local", auth.totp(seed, int(now // 30))
+    )
+    request = Request(
+        {"type": "http", "method": "POST", "path": "/api/auth/step-up", "headers": []}
+    )
     request.state.actor = "operator"
     request.state.session_token = session["access_token"]
     now += 30
@@ -248,7 +284,9 @@ def test_admission_releases_after_work_failure():
 
 
 def test_disk_exhaustion_fails_before_dispatch(monkeypatch):
-    monkeypatch.setattr(availability.shutil, "disk_usage", lambda _: type("Usage", (), {"free": 0})())
+    monkeypatch.setattr(
+        availability.shutil, "disk_usage", lambda _: type("Usage", (), {"free": 0})()
+    )
     with pytest.raises(HTTPException) as error:
         availability.storage_budget(force=True)
     assert error.value.status_code == 507
@@ -267,11 +305,14 @@ def test_backup_requires_quiescence(tmp_path):
     store.receipt("BACKUP")
     with quiescence.exclusive("test running API"):
         with pytest.raises(RuntimeError, match="Stop Aegis"):
-            recovery.create_backup(tmp_path.parent / (tmp_path.name + ".aegis-backup"), "synthetic-backup-passphrase")
+            recovery.create_backup(
+                tmp_path.parent / (tmp_path.name + ".aegis-backup"), "synthetic-backup-passphrase"
+            )
 
 
 def test_lockdown_stays_enabled_when_model_stop_fails(monkeypatch):
     from aegis.security import attestor
+
     monkeypatch.setenv("AEGIS_ATTESTOR_SOCKET", "/run/mock.sock")
     monkeypatch.setattr(attestor, "remote", lambda *args: {"stopped": False})
     with pytest.raises(store.Denied) as error:
@@ -309,13 +350,33 @@ def test_signed_release_reproducibility_and_tamper_detection(tmp_path):
     (source / "pyproject.toml").write_text("# synthetic\n")
     key = Ed25519PrivateKey.generate()
     private = tmp_path / "test.private.pem"
-    private.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+    private.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
     public = tmp_path / "test.public.pem"
-    public.write_bytes(key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
-    fingerprint = hashlib.sha256(key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)).hexdigest()
+    public.write_bytes(
+        key.public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+    )
+    fingerprint = hashlib.sha256(
+        key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    ).hexdigest()
     policy = tmp_path / "trust.json"
-    policy.write_text(json.dumps({"public_key_path": str(public), "public_key_sha256": fingerprint,
-        "minimum_version": 2, "expires_at": time.time() + 3600}))
+    policy.write_text(
+        json.dumps(
+            {
+                "public_key_path": str(public),
+                "public_key_sha256": fingerprint,
+                "minimum_version": 2,
+                "expires_at": time.time() + 3600,
+            }
+        )
+    )
     first, second = tmp_path / "release1", tmp_path / "release2"
     release_security.build(source, first, private, 2, epoch=123)
     release_security.build(source, second, private, 2, epoch=123)
@@ -330,7 +391,10 @@ def test_signed_release_reproducibility_and_tamper_detection(tmp_path):
         release_security.verify(first, policy)
 
 
-@pytest.mark.parametrize("name", ["runtime.env", "signer.private.pem", "control.keys.json", "credentials.json", "state.db"])
+@pytest.mark.parametrize(
+    "name",
+    ["runtime.env", "signer.private.pem", "control.keys.json", "credentials.json", "state.db"],
+)
 def test_release_source_rejects_private_files_before_packaging(tmp_path, name):
     (tmp_path / name).write_text("synthetic private fixture")
     with pytest.raises(ValueError, match="private"):
@@ -339,11 +403,18 @@ def test_release_source_rejects_private_files_before_packaging(tmp_path, name):
 
 def test_supervised_refresh_uses_existing_release_gate(monkeypatch):
     from aegis.security import attestor, provider_assurance
+
     spec = {"provider": "p"}
     request = {"synthetic": "signed attestor result"}
     monkeypatch.setattr(provider_assurance.providers, "specification", lambda _: spec)
-    monkeypatch.setattr(attestor, "remote", lambda op, supplied: request if op == "attest" and supplied == spec else None)
+    monkeypatch.setattr(
+        attestor,
+        "remote",
+        lambda op, supplied: request if op == "attest" and supplied == spec else None,
+    )
     observed = []
-    monkeypatch.setattr(provider_assurance, "refresh", lambda *args: observed.append(args) or {"refreshed": True})
+    monkeypatch.setattr(
+        provider_assurance, "refresh", lambda *args: observed.append(args) or {"refreshed": True}
+    )
     assert provider_assurance.refresh_supervised_attestation("p", "security-officer")["refreshed"]
     assert observed == [("p", request, "security-officer")]

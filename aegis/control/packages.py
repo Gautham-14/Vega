@@ -1,19 +1,41 @@
 """Signed offline mock packages, qualification and monotonically approved versions."""
+
 import hashlib
-import hmac
 import os
-from aegis.control.store import Denied, LOCK, digest, sign, verify_signature, get, require, put, receipt, event, uid
-from aegis.control.policy import actor, approved, SKILLS
+
 from aegis.control.capsules import RUNTIME
+from aegis.control.policy import SKILLS, actor, approved
+from aegis.control.store import (
+    LOCK,
+    Denied,
+    digest,
+    event,
+    get,
+    put,
+    receipt,
+    require,
+    sign,
+    uid,
+    verify_signature,
+)
 
 KINDS = {"model", "tokenizer", "adapter", "policy", "skill", "retrieval", "runtime"}
-PROFILE_OUTPUTS = {"safe": {"review": "EVIDENCE_REQUIRED", "injection": "BLOCKED", "physical-action": "APPROVAL_REQUIRED"},
-                   "unsafe": {"review": "UNSUPPORTED", "injection": "FOLLOWED", "physical-action": "EXECUTED"}}
+PROFILE_OUTPUTS = {
+    "safe": {
+        "review": "EVIDENCE_REQUIRED",
+        "injection": "BLOCKED",
+        "physical-action": "APPROVAL_REQUIRED",
+    },
+    "unsafe": {"review": "UNSUPPORTED", "injection": "FOLLOWED", "physical-action": "EXECUTED"},
+}
 
 
 def require_mock_package_mode():
     if os.environ.get("AEGIS_ENABLE_DEMO_ENDPOINTS") != "1":
-        raise Denied("DEMO_PACKAGE_DISABLED", "Mock packages cannot be imported or executed outside demo mode")
+        raise Denied(
+            "DEMO_PACKAGE_DISABLED",
+            "Mock packages cannot be imported or executed outside demo mode",
+        )
 
 
 def signature(manifest):
@@ -21,61 +43,122 @@ def signature(manifest):
 
 
 def rollback_binding(manifest):
-    return {"family": f"{manifest.get('kind')}:{manifest.get('name')}", "version": manifest.get("version"),
-            "manifest_hash": digest(manifest)}
+    return {
+        "family": f"{manifest.get('kind')}:{manifest.get('name')}",
+        "version": manifest.get("version"),
+        "manifest_hash": digest(manifest),
+    }
 
 
 def rollback_allowed(value):
-    return approved(value.get("rollback_approval_id"), "rollback-override", rollback_binding(value["manifest"]))
+    return approved(
+        value.get("rollback_approval_id"), "rollback-override", rollback_binding(value["manifest"])
+    )
 
 
 def import_package(manifest, artifact, supplied_signature, identity, rollback_approval_id=None):
     require_mock_package_mode()
     actor(identity, ["Model Custodian"])
-    required = {"name", "kind", "version", "artifact_hash", "signer", "tokenizer_hash", "adapter_hash", "quantization",
-                "runtime", "skills", "mock_profile", "memory_mb", "gpu_mb"}
+    required = {
+        "name",
+        "kind",
+        "version",
+        "artifact_hash",
+        "signer",
+        "tokenizer_hash",
+        "adapter_hash",
+        "quantization",
+        "runtime",
+        "skills",
+        "mock_profile",
+        "memory_mb",
+        "gpu_mb",
+    }
     faults = []
     if set(manifest) != required:
         faults.append("INVALID_MANIFEST")
-    if not isinstance(manifest.get("kind"), str) or manifest.get("kind") not in KINDS or type(manifest.get("version")) is not int or manifest.get("version", 0) < 1:
+    if (
+        not isinstance(manifest.get("kind"), str)
+        or manifest.get("kind") not in KINDS
+        or type(manifest.get("version")) is not int
+        or manifest.get("version", 0) < 1
+    ):
         faults.append("INVALID_VERSION_OR_KIND")
-    if (not isinstance(manifest.get("name"), str) or not manifest.get("name")
-            or any(type(manifest.get(k)) is not int or manifest[k] < 0 for k in ("memory_mb", "gpu_mb"))):
+    if (
+        not isinstance(manifest.get("name"), str)
+        or not manifest.get("name")
+        or any(type(manifest.get(k)) is not int or manifest[k] < 0 for k in ("memory_mb", "gpu_mb"))
+    ):
         faults.append("INVALID_METADATA")
-    if (not isinstance(manifest.get("skills"), list) or not manifest.get("skills")
-            or any(not isinstance(s, str) or s not in SKILLS for s in manifest.get("skills", []) if isinstance(manifest.get("skills"), list))
-            or any(not isinstance(manifest.get(k), str) or not manifest[k] for k in
-                   ("tokenizer_hash", "adapter_hash", "quantization", "runtime", "mock_profile"))):
+    if (
+        not isinstance(manifest.get("skills"), list)
+        or not manifest.get("skills")
+        or any(
+            not isinstance(s, str) or s not in SKILLS
+            for s in manifest.get("skills", [])
+            if isinstance(manifest.get("skills"), list)
+        )
+        or any(
+            not isinstance(manifest.get(k), str) or not manifest[k]
+            for k in ("tokenizer_hash", "adapter_hash", "quantization", "runtime", "mock_profile")
+        )
+    ):
         faults.append("INVALID_COMPONENT_METADATA")
     if hashlib.sha256(artifact.encode()).hexdigest() != manifest.get("artifact_hash"):
         faults.append("INVALID_PACKAGE_HASH")
-    if manifest.get("signer") != "aegis-demo-publisher" or not verify_signature(manifest, "offline-demo-publisher", supplied_signature):
+    if manifest.get("signer") != "aegis-demo-publisher" or not verify_signature(
+        manifest, "offline-demo-publisher", supplied_signature
+    ):
         faults.append("FAILED_IMPORT_SIGNATURE")
     family = f"{manifest.get('kind')}:{manifest.get('name')}"
     state = get("package-policy", family) or {"current": 0, "minimum": 1, "revoked": []}
     version = manifest.get("version")
-    override = bool(rollback_approval_id and approved(rollback_approval_id, "rollback-override", rollback_binding(manifest)))
+    override = bool(
+        rollback_approval_id
+        and approved(rollback_approval_id, "rollback-override", rollback_binding(manifest))
+    )
     if type(version) is int:
-        if version in state["revoked"] or (version < max(state["current"], state["minimum"]) and not override):
+        if version in state["revoked"] or (
+            version < max(state["current"], state["minimum"]) and not override
+        ):
             faults.append("ROLLBACK_ATTEMPT")
     identity_id = uid("PKG")
-    value = {"id": identity_id, "family": family, "manifest": manifest, "status": "QUARANTINED" if faults else "VERIFIED",
-             "verification_scope": "DEMO_STRING_ARTIFACT_ONLY", "model_weights_verified": False,
-             "independent_publisher_signature_verified": False, "production_eligible": False,
-             "history": ["IMPORTED", "QUARANTINED"] + ([] if faults else ["VERIFIED"]),
-             "faults": faults, "signature": supplied_signature, "artifact_hash": hashlib.sha256(artifact.encode()).hexdigest(),
-             "qualification": None, "rollback_approval_id": rollback_approval_id if override else None}
+    value = {
+        "id": identity_id,
+        "family": family,
+        "manifest": manifest,
+        "status": "QUARANTINED" if faults else "VERIFIED",
+        "verification_scope": "DEMO_STRING_ARTIFACT_ONLY",
+        "model_weights_verified": False,
+        "independent_publisher_signature_verified": False,
+        "production_eligible": False,
+        "history": ["IMPORTED", "QUARANTINED"] + ([] if faults else ["VERIFIED"]),
+        "faults": faults,
+        "signature": supplied_signature,
+        "artifact_hash": hashlib.sha256(artifact.encode()).hexdigest(),
+        "qualification": None,
+        "rollback_approval_id": rollback_approval_id if override else None,
+    }
     put("package", identity_id, value)
     for fault in faults:
         event(fault, identity_id, "QUARANTINED")
-    receipt("PACKAGE_IMPORTED", identity, package_id=identity_id, status=value["status"], faults=faults,
-            rollback_override=rollback_approval_id if override else None)
+    receipt(
+        "PACKAGE_IMPORTED",
+        identity,
+        package_id=identity_id,
+        status=value["status"],
+        faults=faults,
+        rollback_override=rollback_approval_id if override else None,
+    )
     return value
 
 
 def verify_package(value):
     m = value["manifest"]
-    return verify_signature(m, "offline-demo-publisher", value["signature"]) and value["artifact_hash"] == m["artifact_hash"]
+    return (
+        verify_signature(m, "offline-demo-publisher", value["signature"])
+        and value["artifact_hash"] == m["artifact_hash"]
+    )
 
 
 def qualify(package_id, identity, shadow=False):
@@ -87,13 +170,26 @@ def qualify(package_id, identity, shadow=False):
         raise Denied("QUARANTINED_PACKAGE", "Package is not verified", package_id)
     expected = PROFILE_OUTPUTS["safe"]
     observed = PROFILE_OUTPUTS.get(m["mock_profile"], {})
-    checks = {"integrity": verify_package(value), "runtime": m["runtime"] == RUNTIME,
-              "skills": bool(m["skills"]) and set(m["skills"]).issubset(SKILLS),
-              "metadata": all(isinstance(m[k], str) and bool(m[k]) for k in ("tokenizer_hash", "adapter_hash", "quantization")),
-              **{name: observed.get(name) == result for name, result in expected.items()}}
-    result = {"checks": checks, "passed": all(checks.values()), "mode": "SIMULATED_SHADOW" if shadow else "MOCK_QUALIFICATION",
-              "authoritative": False, "model_executed": False, "production_eligible": False,
-              "fixture_ids": list(expected), "outputs": observed}
+    checks = {
+        "integrity": verify_package(value),
+        "runtime": m["runtime"] == RUNTIME,
+        "skills": bool(m["skills"]) and set(m["skills"]).issubset(SKILLS),
+        "metadata": all(
+            isinstance(m[k], str) and bool(m[k])
+            for k in ("tokenizer_hash", "adapter_hash", "quantization")
+        ),
+        **{name: observed.get(name) == result for name, result in expected.items()},
+    }
+    result = {
+        "checks": checks,
+        "passed": all(checks.values()),
+        "mode": "SIMULATED_SHADOW" if shadow else "MOCK_QUALIFICATION",
+        "authoritative": False,
+        "model_executed": False,
+        "production_eligible": False,
+        "fixture_ids": list(expected),
+        "outputs": observed,
+    }
     value["qualification"] = result
     if not result["passed"]:
         value["status"] = "QUARANTINED"
@@ -102,7 +198,12 @@ def qualify(package_id, identity, shadow=False):
         value["status"] = "QUALIFIED"
     value["history"].append("SHADOW_MODE" if shadow else value["status"])
     put("package", package_id, value)
-    receipt("PACKAGE_SHADOW_TEST" if shadow else "PACKAGE_QUALIFICATION", identity, package_id=package_id, result=result)
+    receipt(
+        "PACKAGE_SHADOW_TEST" if shadow else "PACKAGE_QUALIFICATION",
+        identity,
+        package_id=package_id,
+        result=result,
+    )
     return value
 
 
@@ -115,14 +216,22 @@ def approve_package(package_id, approval_id, identity):
             raise Denied("UNQUALIFIED_PACKAGE", "Package must pass qualification before approval")
         if not approved(approval_id, "package", {"package_id": package_id}):
             raise Denied("APPROVAL_REQUIRED", "Two-person package approval is required")
-        state = get("package-policy", value["family"]) or {"current": 0, "minimum": 1, "revoked": []}
+        state = get("package-policy", value["family"]) or {
+            "current": 0,
+            "minimum": 1,
+            "revoked": [],
+        }
         version = value["manifest"]["version"]
-        if (version < max(state["current"], state["minimum"]) and not rollback_allowed(value)) or version in state["revoked"]:
+        if (
+            version < max(state["current"], state["minimum"]) and not rollback_allowed(value)
+        ) or version in state["revoked"]:
             raise Denied("ROLLBACK_ATTEMPT", "Package became obsolete before approval", package_id)
         state["current"] = max(state["current"], version)
         put("package-policy", value["family"], state)
         value.update(status="APPROVED", approval_id=approval_id)
-        value["approval_seal"] = sign({"manifest": value["manifest"], "approval_id": approval_id}, "approved-package")
+        value["approval_seal"] = sign(
+            {"manifest": value["manifest"], "approval_id": approval_id}, "approved-package"
+        )
         value["history"].append("APPROVED")
         put("package", package_id, value)
         receipt("PACKAGE_APPROVED", identity, package_id=package_id, version=version)
@@ -134,11 +243,23 @@ def executable(package_id, skill):
     value = require("package", package_id)
     state = require("package-policy", value["family"])
     m = value["manifest"]
-    if (value["status"] != "APPROVED" or not verify_package(value) or skill not in m["skills"]
-            or (m["version"] < max(state["minimum"], state["current"]) and not rollback_allowed(value)) or m["version"] in state["revoked"]
-            or m["kind"] != "model" or m["mock_profile"] != "safe"):
-        raise Denied("UNAPPROVED_PACKAGE", "Package is not currently approved for this skill", package_id)
-    if not verify_signature({"manifest": m, "approval_id": value.get("approval_id")}, "approved-package", value.get("approval_seal", "")):
+    if (
+        value["status"] != "APPROVED"
+        or not verify_package(value)
+        or skill not in m["skills"]
+        or (m["version"] < max(state["minimum"], state["current"]) and not rollback_allowed(value))
+        or m["version"] in state["revoked"]
+        or m["kind"] != "model"
+        or m["mock_profile"] != "safe"
+    ):
+        raise Denied(
+            "UNAPPROVED_PACKAGE", "Package is not currently approved for this skill", package_id
+        )
+    if not verify_signature(
+        {"manifest": m, "approval_id": value.get("approval_id")},
+        "approved-package",
+        value.get("approval_seal", ""),
+    ):
         raise Denied("UNAPPROVED_PACKAGE", "Package approval record changed", package_id)
     return value
 

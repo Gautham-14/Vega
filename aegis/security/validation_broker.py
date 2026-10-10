@@ -1,6 +1,8 @@
 """Separate gVisor validation broker; the API never receives a Docker socket."""
+
 import argparse
 import os
+
 from aegis.coding import sandbox, tools
 
 
@@ -21,12 +23,16 @@ def main():
     parser.add_argument("--runtime-uid", type=int, required=True)
     args = parser.parse_args()
     if os.environ.get("AEGIS_SANDBOX_BROKER_SOCKET"):
-        raise ValueError("Validator must use its own local backend, never recursively call a broker")
-    from aegis.storage.database import init_db
+        raise ValueError(
+            "Validator must use its own local backend, never recursively call a broker"
+        )
     from aegis.control.store import init_control
+    from aegis.storage.database import init_db
+
     init_db()
     init_control()
     from aegis.security.local_rpc import serve
+
     serve(args.socket, args.runtime_uid, dispatch)
 
 

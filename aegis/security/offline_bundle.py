@@ -11,10 +11,10 @@ import base64
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
 import re
 import stat
 import time
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from cryptography.exceptions import InvalidSignature
@@ -24,7 +24,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from aegis.security.private_files import no_links
 
-
 SCHEMA = "aegis-offline-model-bundle-v1"
 POLICY_SCHEMA = "aegis-offline-model-trust-v1"
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
@@ -33,9 +32,31 @@ MAX_FILES = 20_000
 MAX_FILE_BYTES = 16 * 1024**4
 HEX64 = r"^[0-9a-f]{64}$"
 ID = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$"
-UNSAFE_SUFFIXES = {".py", ".pyc", ".pkl", ".pickle", ".pt", ".pth", ".ckpt", ".joblib",
-                   ".bat", ".cmd", ".ps1", ".sh", ".vbs", ".js", ".jar"}
-RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+UNSAFE_SUFFIXES = {
+    ".py",
+    ".pyc",
+    ".pkl",
+    ".pickle",
+    ".pt",
+    ".pth",
+    ".ckpt",
+    ".joblib",
+    ".bat",
+    ".cmd",
+    ".ps1",
+    ".sh",
+    ".vbs",
+    ".js",
+    ".jar",
+}
+RESERVED = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
 
 
 def _json_object(pairs):
@@ -56,8 +77,11 @@ def _read_json(path: Path, limit: int) -> tuple[dict, bytes]:
     if len(raw) > limit:
         raise ValueError("Manifest or trust policy is too large")
     try:
-        value = json.loads(raw.decode("utf-8"), object_pairs_hook=_json_object,
-                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError("Invalid JSON constant")))
+        value = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_json_object,
+            parse_constant=lambda _: (_ for _ in ()).throw(ValueError("Invalid JSON constant")),
+        )
     except (UnicodeError, json.JSONDecodeError) as error:
         raise ValueError("Manifest or trust policy is invalid JSON") from error
     if not isinstance(value, dict):
@@ -66,16 +90,31 @@ def _read_json(path: Path, limit: int) -> tuple[dict, bytes]:
 
 
 def canonical_bytes(value: dict) -> bytes:
-    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return json.dumps(
+        value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
 
 
 def _safe_relative(value: str) -> str:
-    if (not isinstance(value, str) or not value or len(value) > 512 or "\\" in value or ":" in value
-            or any(ord(char) < 32 for char in value)):
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > 512
+        or "\\" in value
+        or ":" in value
+        or any(ord(char) < 32 for char in value)
+    ):
         raise ValueError("Bundle file path is invalid")
     path = PurePosixPath(value)
-    if (path.is_absolute() or path.as_posix() != value or any(part in {"", ".", ".."} for part in value.split("/"))
-            or any(part.rstrip(" .") != part or part.split(".")[0].upper() in RESERVED for part in path.parts)):
+    if (
+        path.is_absolute()
+        or path.as_posix() != value
+        or any(part in {"", ".", ".."} for part in value.split("/"))
+        or any(
+            part.rstrip(" .") != part or part.split(".")[0].upper() in RESERVED
+            for part in path.parts
+        )
+    ):
         raise ValueError("Bundle file path is unsafe")
     if path.suffix.lower() in UNSAFE_SUFFIXES:
         raise ValueError("Executable model serialization or script is not accepted")
@@ -127,9 +166,14 @@ class BundleManifest(BaseModel):
         if self.modality == "vision" and "projector" not in roles:
             raise ValueError("Vision projector file is missing")
         _safe_relative(self.runtime_entry)
-        if self.runtime_platform == "windows" and PurePosixPath(self.runtime_entry).suffix.lower() != ".exe":
+        if (
+            self.runtime_platform == "windows"
+            and PurePosixPath(self.runtime_entry).suffix.lower() != ".exe"
+        ):
             raise ValueError("Windows runtime entry must be an executable file")
-        if not any(item.path == self.runtime_entry and item.role == "runtime" for item in self.files):
+        if not any(
+            item.path == self.runtime_entry and item.role == "runtime" for item in self.files
+        ):
             raise ValueError("Runtime entry must identify a declared runtime file")
         return self
 
@@ -153,7 +197,9 @@ class TrustPolicy(BaseModel):
     def valid_policy(self):
         if any(not re.fullmatch(ID, name) for name in (*self.signers, *self.minimum_versions)):
             raise ValueError("Trust policy identifiers are invalid")
-        if any(type(version) is not int or version < 1 for version in self.minimum_versions.values()):
+        if any(
+            type(version) is not int or version < 1 for version in self.minimum_versions.values()
+        ):
             raise ValueError("Minimum versions must be positive integers")
         if any(not re.fullmatch(HEX64, item) for item in self.revoked_manifest_sha256):
             raise ValueError("Revoked manifest digest is invalid")
@@ -175,7 +221,11 @@ def _sha256_file(path: Path, expected_size: int) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         opened = os.fstat(stream.fileno())
-        if (opened.st_dev, opened.st_ino, opened.st_size) != (before.st_dev, before.st_ino, before.st_size):
+        if (opened.st_dev, opened.st_ino, opened.st_size) != (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+        ):
             raise ValueError("Bundle file changed while opening")
         read_size = 0
         while block := stream.read(min(1024 * 1024, expected_size - read_size + 1)):
@@ -185,8 +235,15 @@ def _sha256_file(path: Path, expected_size: int) -> str:
             digest.update(block)
         closed = os.fstat(stream.fileno())
     after = _regular_file(path)
-    fields = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
-    if fields(before) != fields(opened) or fields(opened) != fields(closed) or fields(closed) != fields(after):
+
+    def fields(info):
+        return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+
+    if (
+        fields(before) != fields(opened)
+        or fields(opened) != fields(closed)
+        or fields(closed) != fields(after)
+    ):
         raise ValueError("Bundle file changed while hashing")
     return digest.hexdigest()
 
@@ -247,8 +304,10 @@ def verify_bundle(bundle_dir: str | Path, trust_policy_path: str | Path) -> dict
     expected = {"manifest.json", "manifest.sig", *(item.path for item in manifest.files)}
     actual = set()
     visited = 0
+
     def unreadable(error):
         raise ValueError("Bundle inventory could not be completely read") from error
+
     for parent, dirs, files in os.walk(root, followlinks=False, onerror=unreadable):
         visited += 1
         if visited + len(dirs) + len(files) + len(actual) > MAX_FILES * 2 + 2:
@@ -269,23 +328,46 @@ def verify_bundle(bundle_dir: str | Path, trust_policy_path: str | Path) -> dict
         if _sha256_file(path, item.size) != item.sha256:
             raise ValueError("Bundle file hash differs from signed manifest")
         total += item.size
-    if (_sha256_file(root / "manifest.json", len(manifest_raw)) != manifest_hash
-            or _sha256_file(signature_path, len(signature_raw)) != hashlib.sha256(signature_raw).hexdigest()
-            or _sha256_file(policy_path, len(policy_raw)) != hashlib.sha256(policy_raw).hexdigest()
-            or _sha256_file(key_path, len(key_pem)) != hashlib.sha256(key_pem).hexdigest()):
+    if (
+        _sha256_file(root / "manifest.json", len(manifest_raw)) != manifest_hash
+        or _sha256_file(signature_path, len(signature_raw))
+        != hashlib.sha256(signature_raw).hexdigest()
+        or _sha256_file(policy_path, len(policy_raw)) != hashlib.sha256(policy_raw).hexdigest()
+        or _sha256_file(key_path, len(key_pem)) != hashlib.sha256(key_pem).hexdigest()
+    ):
         raise ValueError("Bundle signature or trust root changed during verification")
-    return {"status": "VERIFIED_OFFLINE_FILES", "bundle_id": manifest.bundle_id,
-            "model_family": manifest.model_family, "version": manifest.version,
-            "modality": manifest.modality, "manifest_sha256": manifest_hash,
-            "trust_policy_sha256": hashlib.sha256(policy_raw).hexdigest(),
-            "signer_public_key_sha256": signer.public_key_sha256,
-            "file_count": len(manifest.files), "file_bytes": total,
-            "runtime_platform": manifest.runtime_platform, "runtime_entry": manifest.runtime_entry,
-            "runtime_sha256": next(item.sha256 for item in manifest.files if item.path == manifest.runtime_entry),
-            "weights_inventory_sha256": hashlib.sha256(canonical_bytes({"files": [
-                item.model_dump() for item in manifest.files if item.role in {"weights", "projector", "tokenizer"}
-            ]})).hexdigest(),
-            "signature_verified": True, "artifact_integrity_verified": True,
-            "license_identifier_allowlisted": True,
-            "runtime_binding_verified": False, "model_qualification_verified": False,
-            "network_isolation_verified": False, "production_eligible": False}
+    return {
+        "status": "VERIFIED_OFFLINE_FILES",
+        "bundle_id": manifest.bundle_id,
+        "model_family": manifest.model_family,
+        "version": manifest.version,
+        "modality": manifest.modality,
+        "manifest_sha256": manifest_hash,
+        "trust_policy_sha256": hashlib.sha256(policy_raw).hexdigest(),
+        "signer_public_key_sha256": signer.public_key_sha256,
+        "file_count": len(manifest.files),
+        "file_bytes": total,
+        "runtime_platform": manifest.runtime_platform,
+        "runtime_entry": manifest.runtime_entry,
+        "runtime_sha256": next(
+            item.sha256 for item in manifest.files if item.path == manifest.runtime_entry
+        ),
+        "weights_inventory_sha256": hashlib.sha256(
+            canonical_bytes(
+                {
+                    "files": [
+                        item.model_dump()
+                        for item in manifest.files
+                        if item.role in {"weights", "projector", "tokenizer"}
+                    ]
+                }
+            )
+        ).hexdigest(),
+        "signature_verified": True,
+        "artifact_integrity_verified": True,
+        "license_identifier_allowlisted": True,
+        "runtime_binding_verified": False,
+        "model_qualification_verified": False,
+        "network_isolation_verified": False,
+        "production_eligible": False,
+    }

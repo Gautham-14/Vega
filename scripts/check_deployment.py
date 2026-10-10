@@ -3,15 +3,17 @@
 Uses only synthetic probes; never reads protected file contents. No policy is
 changed. Requires a provisioned, independently reviewed attestor policy.
 """
+
 import argparse
 import json
 import os
 import subprocess
 
 import psutil
+
 from aegis.security.attestor import observe, protected_json
 
-PROBE = r'''
+PROBE = r"""
 import json, os, socket
 checks = {}
 for name, address, family in [('ipv4', ('1.1.1.1', 443), socket.AF_INET),
@@ -38,7 +40,7 @@ for name, path in [('runtime', '/var/lib/aegis'), ('keys', '/var/lib/aegis-key')
         os.close(descriptor)
         checks[name + '_inaccessible'] = False
 print(json.dumps(checks))
-'''
+"""
 
 
 def check(policy_path, provider):
@@ -47,19 +49,48 @@ def check(policy_path, provider):
     entry = protected_json(policy_path)["providers"][provider]
     measured = observe(entry)
     process = psutil.Process(measured["process"]["pid"])
-    args = ["/usr/bin/nsenter", "--target", str(process.pid), "--net", "--mount",
-            "--setuid", str(process.uids().effective), "--setgid", str(process.gids().effective),
-            "/opt/aegis/.venv/bin/python", "-I", "-c", PROBE]
-    result = subprocess.run(args, capture_output=True, timeout=15, check=True,
-                            env={"PATH": "/usr/bin:/bin", "LANG": "C"})
+    args = [
+        "/usr/bin/nsenter",
+        "--target",
+        str(process.pid),
+        "--net",
+        "--mount",
+        "--setuid",
+        str(process.uids().effective),
+        "--setgid",
+        str(process.gids().effective),
+        "/opt/aegis/.venv/bin/python",
+        "-I",
+        "-c",
+        PROBE,
+    ]
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        timeout=15,
+        check=True,
+        env={"PATH": "/usr/bin:/bin", "LANG": "C"},
+    )
     checks = json.loads(result.stdout)
-    expected = {"ipv4_blocked", "ipv6_blocked", "dns_blocked", "runtime_inaccessible", "keys_inaccessible", "witness_inaccessible", "docker_inaccessible"}
+    expected = {
+        "ipv4_blocked",
+        "ipv6_blocked",
+        "dns_blocked",
+        "runtime_inaccessible",
+        "keys_inaccessible",
+        "witness_inaccessible",
+        "docker_inaccessible",
+    }
     if set(checks) != expected or any(value is not True for value in checks.values()):
         raise RuntimeError("Deployed model failed a negative containment check")
     if observe(entry)["process"] != measured["process"]:
         raise RuntimeError("Model process changed during deployment checks")
-    return {"passed": True, "checks": checks, "process": measured["process"],
-            "scope": "Observed process identity, model mount/network namespace and OS identity; no claim of complete sandbox escape resistance"}
+    return {
+        "passed": True,
+        "checks": checks,
+        "process": measured["process"],
+        "scope": "Observed process identity, model mount/network namespace and OS identity; no claim of complete sandbox escape resistance",
+    }
 
 
 def main():

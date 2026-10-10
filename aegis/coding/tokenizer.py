@@ -3,10 +3,12 @@
 LLM serving owns chat templates, token IDs and vision processing. Aegis never
 trains a replacement vocabulary or pretends image placeholders encode pixels.
 """
+
 import hashlib
 import re
 import stat
 from pathlib import Path
+
 from aegis.security.private_files import no_links
 
 
@@ -24,16 +26,22 @@ def get_tokens(text):
         result.extend(part.casefold() for part in split if part.casefold() != word.casefold())
     return result
 
+
 class LocalModelTokenizer:
     """Read a reviewed tokenizer.json, never weights, remote code or a Hub ID.
 
     Matching the file hash does not prove it belongs to selected model weights.
     Chat templates and multimodal token counts remain the server's responsibility.
     """
+
     def __init__(self, tokenizer_file, sha256):
         path = Path(tokenizer_file)
-        if (not isinstance(sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", sha256)
-                or not path.is_absolute() or str(path).startswith(("\\\\", "//"))):
+        if (
+            not isinstance(sha256, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", sha256)
+            or not path.is_absolute()
+            or str(path).startswith(("\\\\", "//"))
+        ):
             raise ValueError("An absolute local tokenizer.json and SHA-256 pin are required")
         path = no_links(path)
         for part in (path, *path.parents):
@@ -47,6 +55,7 @@ class LocalModelTokenizer:
         if len(raw) > 64_000_000 or hashlib.sha256(raw).hexdigest() != sha256:
             raise ValueError("Tokenizer digest mismatch or size limit exceeded")
         from tokenizers import Tokenizer
+
         self._tokenizer = Tokenizer.from_str(raw.decode("utf-8"))
         self._tokenizer.no_truncation()
         self._tokenizer.no_padding()
@@ -60,6 +69,9 @@ class LocalModelTokenizer:
     def decode(self, ids, *, skip_special_tokens=False):
         if not isinstance(ids, list) or len(ids) > 512_000:
             raise ValueError("Token IDs must be a bounded list")
-        if any(type(token) is not int or token < 0 or self._tokenizer.id_to_token(token) is None for token in ids):
+        if any(
+            type(token) is not int or token < 0 or self._tokenizer.id_to_token(token) is None
+            for token in ids
+        ):
             raise ValueError("Unknown token ID")
         return self._tokenizer.decode(ids, skip_special_tokens=skip_special_tokens)

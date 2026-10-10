@@ -1,13 +1,13 @@
 """Authenticated inventory and immutable local model-provider profiles."""
+
 from fastapi import APIRouter, Depends, Query
 
+from aegis.advisory import qualification as advisory_qualification
 from aegis.coding import providers
 from aegis.control import policy
+from aegis.security import media_qualification, provider_assurance
 from aegis.security.auth import principal
 from aegis.security.model_qualification import QualificationSuite, run_candidate_suite
-from aegis.security import provider_assurance
-from aegis.security import media_qualification
-from aegis.advisory import qualification as advisory_qualification
 
 router = APIRouter(prefix="/api/providers", tags=["Local model providers"])
 
@@ -54,12 +54,16 @@ def qualify_candidate(provider_id: str, req: QualificationSuite, identity=Depend
 
 
 @router.post("/{provider_id}/qualify-media")
-def qualify_media(provider_id: str, req: media_qualification.MediaSuite, identity=Depends(principal)):
+def qualify_media(
+    provider_id: str, req: media_qualification.MediaSuite, identity=Depends(principal)
+):
     return media_qualification.run(provider_id, req, identity)
 
 
 @router.post("/{provider_id}/qualify-advisory")
-def qualify_advisory(provider_id: str, req: advisory_qualification.Suite, identity=Depends(principal)):
+def qualify_advisory(
+    provider_id: str, req: advisory_qualification.Suite, identity=Depends(principal)
+):
     return advisory_qualification.run(provider_id, req, identity)
 
 
@@ -69,14 +73,16 @@ def assurance(provider_id: str, identity=Depends(principal)):
 
 
 @router.post("/{provider_id}/attestations", status_code=201)
-def import_runtime_attestation(provider_id: str, req: provider_assurance.AttestationImportRequest,
-                               identity=Depends(principal)):
+def import_runtime_attestation(
+    provider_id: str, req: provider_assurance.AttestationImportRequest, identity=Depends(principal)
+):
     return provider_assurance.import_attestation(provider_id, req, identity)
 
 
 @router.post("/{provider_id}/release")
-def activate_release(provider_id: str, req: provider_assurance.ReleaseActivationRequest,
-                     identity=Depends(principal)):
+def activate_release(
+    provider_id: str, req: provider_assurance.ReleaseActivationRequest, identity=Depends(principal)
+):
     return provider_assurance.activate(provider_id, req.approval_id, identity)
 
 
@@ -96,6 +102,7 @@ def measure_runtime(provider_id: str, pid: int = Query(gt=0), identity=Depends(p
 
 
 @router.post("/{provider_id}/release/refresh")
-def refresh_release(provider_id: str, req: provider_assurance.AttestationImportRequest,
-                    identity=Depends(principal)):
+def refresh_release(
+    provider_id: str, req: provider_assurance.AttestationImportRequest, identity=Depends(principal)
+):
     return provider_assurance.refresh(provider_id, req, identity)

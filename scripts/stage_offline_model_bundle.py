@@ -9,24 +9,34 @@ from __future__ import annotations
 
 import argparse
 import base64
-from getpass import getpass
 import hashlib
 import os
-from pathlib import Path
 import sys
+from getpass import getpass
+from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from aegis.security.offline_bundle import (
-    BundleManifest, MAX_MANIFEST_BYTES, _read_json, _regular_file, _safe_relative,
-    _sha256_file, canonical_bytes,
+    MAX_MANIFEST_BYTES,
+    BundleManifest,
+    _read_json,
+    _regular_file,
+    _safe_relative,
+    _sha256_file,
+    canonical_bytes,
 )
 from aegis.security.private_files import no_links
 
 
-def stage(bundle_directory: str | Path, draft_path: str | Path, private_key_path: str | Path, password: bytes) -> dict:
+def stage(
+    bundle_directory: str | Path,
+    draft_path: str | Path,
+    private_key_path: str | Path,
+    password: bytes,
+) -> dict:
     root, draft, secret = map(no_links, (bundle_directory, draft_path, private_key_path))
     if not root.is_dir() or draft.is_relative_to(root) or secret.is_relative_to(root):
         raise ValueError("Draft and private key must be outside the bundle directory")
@@ -48,7 +58,9 @@ def stage(bundle_directory: str | Path, draft_path: str | Path, private_key_path
         name = _safe_relative(item["path"])
         path = root.joinpath(*name.split("/"))
         size = _regular_file(path).st_size
-        files.append({"path": name, "role": item["role"], "size": size, "sha256": _sha256_file(path, size)})
+        files.append(
+            {"path": name, "role": item["role"], "size": size, "sha256": _sha256_file(path, size)}
+        )
     manifest = {**draft_json, "files": files}
     BundleManifest.model_validate(manifest)
     raw = canonical_bytes(manifest)
@@ -79,18 +91,29 @@ def stage(bundle_directory: str | Path, draft_path: str | Path, private_key_path
     except Exception:
         manifest_path.unlink(missing_ok=True)
         raise
-    public = key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-    return {"manifest_sha256": hashlib.sha256(raw).hexdigest(),
-            "signer_public_key_sha256": hashlib.sha256(public).hexdigest(),
-            "file_count": len(files), "private_key_copied": False,
-            "next_step": "Transfer only the bundle; provision public key and trust policy separately"}
+    public = key.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+    return {
+        "manifest_sha256": hashlib.sha256(raw).hexdigest(),
+        "signer_public_key_sha256": hashlib.sha256(public).hexdigest(),
+        "file_count": len(files),
+        "private_key_copied": False,
+        "next_step": "Transfer only the bundle; provision public key and trust policy separately",
+    }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Sign a reviewed offline model bundle on a separate staging computer")
+    parser = argparse.ArgumentParser(
+        description="Sign a reviewed offline model bundle on a separate staging computer"
+    )
     parser.add_argument("bundle_directory")
-    parser.add_argument("--draft", required=True, help="Reviewed draft manifest JSON outside bundle")
-    parser.add_argument("--private-key", required=True, help="Existing encrypted Ed25519 PEM outside bundle")
+    parser.add_argument(
+        "--draft", required=True, help="Reviewed draft manifest JSON outside bundle"
+    )
+    parser.add_argument(
+        "--private-key", required=True, help="Existing encrypted Ed25519 PEM outside bundle"
+    )
     args = parser.parse_args()
     password = getpass("Staging private-key passphrase: ").encode()
     try:

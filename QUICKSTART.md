@@ -1,10 +1,14 @@
 # Local setup and operation
 
-For the prepared development installation on this workstation, account,
-credential and verified recovery locations are in
-[LOCAL_OPERATIONS.md](LOCAL_OPERATIONS.md).
+Aegis targets Windows, macOS and Linux. See [LOCAL_MODELS.md](LOCAL_MODELS.md)
+for dynamic local GGUF routing and [VM_DEPLOYMENT.md](VM_DEPLOYMENT.md) for the
+separate hardened guest backend. No VM infrastructure is installed by setup.
 
-Use a reviewed Python 3.11+ installation. Aegis launchers do not download
+[LOCAL_OPERATIONS.md](LOCAL_OPERATIONS.md) describes a historical development
+installation. Its credentials, backups and reports are absent from this checkout;
+follow the setup and account-provisioning steps below for your installation.
+
+Use a reviewed Python 3.11–3.14 installation. Aegis launchers do not download
 dependencies or models automatically. Set up from a reviewed local wheelhouse
 and its separate SHA-256 manifest:
 
@@ -20,7 +24,9 @@ For connected development only, you must create a virtual environment exactly na
 
 ```text
 python -m venv .venv
-.\.venv\Scripts\pip install -e .[cli]
+.\.venv\Scripts\python.exe -m pip install --require-hashes -r requirements-cli.lock
+.\.venv\Scripts\python.exe -m pip install --require-hashes -r requirements-quality.lock
+.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
 ```
 
 Start the local API and CLI together:

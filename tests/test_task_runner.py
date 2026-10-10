@@ -1,17 +1,23 @@
 """
 Tests for Aegis End-to-End Task Runner and Main Demo Workflow
 """
+
 import pytest
-from aegis.storage.database import init_db
-from aegis.models.registry import seed_model_registry
+
 from aegis.knowledge.demo_data import seed_knowledge_registry
+from aegis.models.registry import seed_model_registry
 from aegis.runtime.task_runner import TaskRunner, get_all_tasks
+from aegis.storage.database import init_db
+
+pytestmark = pytest.mark.usefixtures("simulated_demo_hardware")
+
 
 @pytest.fixture(autouse=True)
 def setup_task_env():
     init_db()
     seed_model_registry()
     seed_knowledge_registry()
+
 
 def test_pump_inspection_demo_workflow():
     runner = TaskRunner()

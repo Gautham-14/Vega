@@ -3,9 +3,9 @@
 No pickle, network listener, shell invocation, or caller-selected operation.
 The socket owner and service UID must be different from the runtime UID.
 """
+
 import json
 import os
-from pathlib import Path
 import socket
 import socketserver
 import stat
@@ -13,6 +13,7 @@ import struct
 import sys
 import threading
 import time
+from pathlib import Path
 
 MAX_MESSAGE = 16 * 1024 * 1024
 
@@ -25,6 +26,7 @@ def peer_uid(stream):
 
 def receive(stream):
     deadline = time.monotonic() + 5
+
     def read(size):
         parts = bytearray()
         while len(parts) < size:
@@ -37,6 +39,7 @@ def receive(stream):
                 raise ValueError("Truncated custody response")
             parts.extend(chunk)
         return bytes(parts)
+
     length = struct.unpack("!I", read(4))[0]
     if not 0 < length <= MAX_MESSAGE:
         raise ValueError("Custody message exceeds the limit")
@@ -57,7 +60,12 @@ def call(path, owner_uid, request, timeout=5):
     if not sys.platform.startswith("linux"):
         raise RuntimeError("Protected custody RPC is available on Linux only")
     target = Path(path)
-    if not target.is_absolute() or type(owner_uid) is not int or owner_uid < 0 or owner_uid == os.geteuid():
+    if (
+        not target.is_absolute()
+        or type(owner_uid) is not int
+        or owner_uid < 0
+        or owner_uid == os.geteuid()
+    ):
         raise ValueError("Custody service must belong to a separate OS identity")
     # Check ancestors without following symlinks; group-writable socket directories
     # permit substitution and are forbidden even when peer verification would catch it.
@@ -83,7 +91,11 @@ def call(path, owner_uid, request, timeout=5):
 
 
 def serve(path, allowed_uid, dispatch):
-    if not sys.platform.startswith("linux") or type(allowed_uid) is not int or allowed_uid == os.geteuid():
+    if (
+        not sys.platform.startswith("linux")
+        or type(allowed_uid) is not int
+        or allowed_uid == os.geteuid()
+    ):
         raise RuntimeError("Service and runtime require separate Linux identities")
     target = Path(path)
     if not target.is_absolute() or target.is_symlink():
@@ -103,6 +115,7 @@ def serve(path, allowed_uid, dispatch):
     if target.parent.stat().st_uid != os.geteuid() or target.parent.stat().st_mode & 0o022:
         raise ValueError("Service must own its protected socket directory")
     slots = threading.BoundedSemaphore(4)
+
     class Handler(socketserver.BaseRequestHandler):
         def handle(self):
             self.request.settimeout(5)
@@ -118,14 +131,17 @@ def serve(path, allowed_uid, dispatch):
                     pass
             finally:
                 slots.release()
+
     class Server(socketserver.ThreadingUnixStreamServer):
         daemon_threads = True
+
         # Refuse excess work before creating an unbounded thread population.
         def process_request(self, request, address):
             if not slots.acquire(blocking=False):
                 request.close()
             else:
                 super().process_request(request, address)
+
     with Server(str(target), Handler) as server:
         # The reviewed custody group permits the separately owned runtime to
         # connect; kernel peer UID checks still reject every other group member.

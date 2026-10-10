@@ -2,15 +2,17 @@
 Aegis Sovereign AI Runtime - Hardware Simulation Mode
 Defines realistic industrial hardware deployment profiles.
 """
-from typing import Dict, Any, List
-from aegis.storage.database import query_one, execute_write
+
+from typing import Any, Dict, List
+
+from aegis.storage.database import execute_write, query_one
 
 HARDWARE_PROFILES: Dict[str, Dict[str, Any]] = {
     "REAL": {
         "id": "REAL",
         "name": "Host System Hardware (Live Telemetry)",
         "description": "Uses live CPU, RAM, and GPU detection from host environment.",
-        "simulated": False
+        "simulated": False,
     },
     "PROFILE_EDGE": {
         "id": "PROFILE_EDGE",
@@ -29,8 +31,8 @@ HARDWARE_PROFILES: Dict[str, Dict[str, Any]] = {
             "name": "None",
             "vram_mb": 0,
             "required": False,
-            "status": "NOT REQUIRED"
-        }
+            "status": "NOT REQUIRED",
+        },
     },
     "PROFILE_LAPTOP": {
         "id": "PROFILE_LAPTOP",
@@ -49,8 +51,8 @@ HARDWARE_PROFILES: Dict[str, Dict[str, Any]] = {
             "name": "Integrated Iris Xe (CPU-only execution)",
             "vram_mb": 0,
             "required": False,
-            "status": "NOT REQUIRED"
-        }
+            "status": "NOT REQUIRED",
+        },
     },
     "PROFILE_WORKSTATION": {
         "id": "PROFILE_WORKSTATION",
@@ -69,8 +71,8 @@ HARDWARE_PROFILES: Dict[str, Dict[str, Any]] = {
             "name": "None (Dedicated High-Memory CPU)",
             "vram_mb": 0,
             "required": False,
-            "status": "NOT REQUIRED"
-        }
+            "status": "NOT REQUIRED",
+        },
     },
     "PROFILE_AI_NODE": {
         "id": "PROFILE_AI_NODE",
@@ -89,21 +91,26 @@ HARDWARE_PROFILES: Dict[str, Dict[str, Any]] = {
             "name": "NVIDIA RTX 4090 24GB",
             "vram_mb": 24576,
             "required": False,
-            "status": "DETECTED_OPTIONAL"
-        }
-    }
+            "status": "DETECTED_OPTIONAL",
+        },
+    },
 }
+
 
 def get_active_hardware_profile_name() -> str:
     """Get the currently active profile key."""
     row = query_one("SELECT value FROM system_config WHERE key = 'hardware_profile'")
     return row["value"] if row else "REAL"
 
+
 def set_active_hardware_profile_name(profile_name: str) -> None:
     """Set the active hardware profile key."""
     if profile_name not in HARDWARE_PROFILES:
         raise ValueError(f"Unknown hardware profile: {profile_name}")
-    execute_write("UPDATE system_config SET value = ? WHERE key = 'hardware_profile'", (profile_name,))
+    execute_write(
+        "UPDATE system_config SET value = ? WHERE key = 'hardware_profile'", (profile_name,)
+    )
+
 
 def list_hardware_profiles() -> List[Dict[str, Any]]:
     """Return all available profiles with active flag."""
@@ -111,6 +118,6 @@ def list_hardware_profiles() -> List[Dict[str, Any]]:
     result = []
     for k, v in HARDWARE_PROFILES.items():
         copy = dict(v)
-        copy["is_active"] = (k == active)
+        copy["is_active"] = k == active
         result.append(copy)
     return result

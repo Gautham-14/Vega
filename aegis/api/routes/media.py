@@ -1,7 +1,10 @@
 """Authenticated media approval, preview and local execution."""
+
 import base64
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
+
 from aegis.media import service
 from aegis.security.auth import principal
 
@@ -41,11 +44,24 @@ def view(task_id: str, identity=Depends(principal)):
 @router.get("/tasks/{task_id}/images/{phase}/{index}")
 def preview(task_id: str, phase: str, index: int, identity=Depends(principal)):
     value = service.view(task_id, identity)
-    candidates = value["request"]["images"] if phase == "input" else value.get("result", {}).get("images", []) if phase == "output" else []
+    candidates = (
+        value["request"]["images"]
+        if phase == "input"
+        else value.get("result", {}).get("images", [])
+        if phase == "output"
+        else []
+    )
     if not 0 <= index < len(candidates):
         raise HTTPException(404, "Image not available")
-    return Response(base64.b64decode(candidates[index]["data"], validate=True), media_type="image/png",
-                    headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Disposition": "inline"})
+    return Response(
+        base64.b64decode(candidates[index]["data"], validate=True),
+        media_type="image/png",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": "inline",
+        },
+    )
 
 
 @router.post("/tasks/{task_id}/run")

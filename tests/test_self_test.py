@@ -1,17 +1,21 @@
 """
 Tests for Aegis 6-Point Security Self-Test Suite
 """
+
 import pytest
-from aegis.storage.database import init_db
-from aegis.models.registry import seed_model_registry
+
 from aegis.knowledge.demo_data import seed_knowledge_registry
+from aegis.models.registry import seed_model_registry
 from aegis.security.self_test import run_security_self_test
+from aegis.storage.database import init_db
+
 
 @pytest.fixture(autouse=True)
 def setup_all():
     init_db()
     seed_model_registry()
     seed_knowledge_registry()
+
 
 def test_six_point_security_self_test():
     results = run_security_self_test()

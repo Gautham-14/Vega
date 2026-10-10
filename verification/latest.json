@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "date_local": "2026-10-10",
+  "timezone": "Asia/Kolkata",
+  "application_version": "1.0.0",
+  "base_commit": "7a5b874430602be28dd05cb7f83f9276dd33e76c",
+  "dirty_when_tested": true,
+  "python": "3.14.7",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "source_sha256": "74309bf2f8dff4f55762c60574b0ad08be2c0036227c34c412a01de1e5726da1",
+  "source_gate": "PASS",
+  "scope": "Local software source checks only; not model quality or production acceptance",
+  "tests": {"passed": 754, "failed": 0, "skipped": 3, "warnings": 1, "duration_seconds": 425.20},
+  "skip_reasons": [
+    "Separate-UID kernel custody integration requires Linux root",
+    "Symlinks are unavailable to this Windows account",
+    "Native POSIX owner/mode semantics"
+  ],
+  "overall_coverage_percent": 75.50,
+  "critical_coverage_percent": {
+    "aegis/security/auth.py": 86.80,
+    "aegis/control/policy.py": 88.51,
+    "aegis/security/recovery.py": 80.40,
+    "aegis/coding/providers.py": 85.65,
+    "aegis/advisory/inference.py": 94.37,
+    "aegis/media/inference.py": 82.52
+  },
+  "checks": {
+    "ruff_lint": "PASS",
+    "ruff_format": "PASS",
+    "configured_mypy_two_modules": "PASS",
+    "utf8": "PASS",
+    "versions": "PASS",
+    "compilation": "PASS",
+    "pip_check": "PASS",
+    "bandit_configured_ci_threshold": "PASS",
+    "dependency_audit_dev": "NO_KNOWN_VULNERABILITIES",
+    "dependency_audit_cli": "NO_KNOWN_VULNERABILITIES",
+    "fresh_wheel_installation": "PASS"
+  },
+  "locks": {
+    "requirements.lock": "cc3ad78616db7cca1cc124c300ba7a263f9c757cd7d704f0182d01ef38371cc3",
+    "requirements-dev.lock": "39683ae7d7ff802375a7b40930c4c4389c58ba064e99401d78e370701534b221",
+    "requirements-cli.lock": "88cba40ed5a79b929f456c91392fa83b8c9284cfe35a374c433d344d72ee0805",
+    "requirements-quality.lock": "f86b9cfc2866975ffab2bdf4280b66579b47c21b7502977c87316166483c53c9",
+    "requirements-security.lock": "e663d63534464b5257272a844817f36abb582721e5bf51135525e29bb549c9c9"
+  },
+  "artifact_directory": ".audit-tmp/completion-final-20261010",
+  "artifact_sha256": {
+    "results.xml": "d2a124e1a2be9ba23753430b16b3ddefbb6a3365fb13beafabe65a2eb347ded9",
+    "coverage.json": "b832a19f7a59b9c3826ed40f9cdce2c0c7d49bcaa0dbf7b4a565d929edf26a25",
+    "package.json": "1bdda03135982b7d8a7b2b103ea04ccfaa92bb42d3f2f9235f37f977b135d50c",
+    "verification.json": "4fe35011cbe6c60a2814c9b58c21116f1ddd2e65dc675923cd84c7cc3a07b5d3",
+    "wheel/aegis_runtime-1.0.0-py3-none-any.whl": "40246cc95b2717f3d43952c28e50fd8b27bad0182709dd5aec3c86dcc0e0e57f",
+    "sbom.json": "9134a4e75478e2c21b272346f957b9a7ab0f48bb00eb1bbeb4a5321175a180e1"
+  },
+  "model_probe": {
+    "status": "NEEDS_REVIEW",
+    "total": 12,
+    "routing_passed": 12,
+    "narrow_answer_checks_passed": 7,
+    "repeated_runs": 2,
+    "operator_data_used": false,
+    "generated_code_executed": false,
+    "suite_sha256": "66ab8e6f8f269f9da47c28f8b5d4894ca61d056bde18f6af0ef7bc0d03a9dce5",
+    "report_sha256": "ca4d3fd643542918dc688d5ec58589688042e2f131992894852a9340c8d649f4",
+    "report": ".audit-tmp/completion-20261010/local-model-evaluation.json"
+  },
+  "current_matrix_ci": "PUBLICATION_AUTHORIZED_RESULT_PENDING",
+  "vm_installed_or_booted": false,
+  "production_accepted": false
+}

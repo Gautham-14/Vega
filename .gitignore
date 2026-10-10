@@ -24,6 +24,9 @@ control.keys.dpapi
 .coverage
 coverage.xml
 htmlcov/
+.mypy_cache/
+.ruff_cache/
+coverage.json
 .tox/
 .nox/
 

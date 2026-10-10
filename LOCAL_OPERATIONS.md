@@ -1,10 +1,15 @@
-# Local operational setup
+# Historical local operational setup
 
-Prepared on 9 October 2026 without downloading, loading or running models.
-This is a development installation on Windows; production deployment still
-requires the independently provisioned Linux custody and isolation controls.
+The following records describe an installation prepared on 9 October 2026
+without loading or running models. On 10 October 2026, all credential, backup,
+restore and verification paths listed below were absent from this checkout.
+These historical records do not establish its current accounts, recovery
+readiness or receipt-chain validity. Follow [QUICKSTART.md](QUICKSTART.md) to
+prepare your own installation and [WORKFLOW_VERIFICATION.md](WORKFLOW_VERIFICATION.md)
+for current source-regression evidence. Production deployment still requires
+the independently provisioned Linux custody and isolation controls.
 
-## Completed locally
+## Previously recorded operations (evidence unavailable here)
 
 - Created separate `operator`, `data-owner`, `model-custodian` and
   `security-officer` accounts with independently generated passwords.
@@ -16,19 +21,20 @@ requires the independently provisioned Linux custody and isolation controls.
 - Created and authenticated an encrypted operational-state backup, restored it
   into a new directory, and verified restored file bytes and receipt integrity.
 - Successfully signed in as all four accounts against the restored database;
-  signed out afterward. No test sessions remain active.
+  signed out afterward. The previous record reported no active test sessions.
 - Started the actual API/CLI launcher against the provisioned installation and
-  cleanly exited. The managed model directory is empty.
-- Completed the full pinned regression: **669 passed, 3 platform-related skips,
-  no failures**. The exact skips and reports are in
-  [WORKFLOW_VERIFICATION.md](WORKFLOW_VERIFICATION.md).
+  cleanly exited. Its managed model directory was recorded as empty.
+- The previous record reported **669 passed, 3 platform-related skips, no
+  failures**. Its reports are unavailable here and this is not the current
+  regression result; see [WORKFLOW_VERIFICATION.md](WORKFLOW_VERIFICATION.md).
 
-## Private local artifacts
+## Historical private artifact locations
 
-These paths are ignored by Git. Their directories and files use current-user-only
-Windows ACLs. The credential file contains **plaintext generated passwords and
-the backup passphrase**; its protection is the local ACL. Operational control
-keys use current-user Windows DPAPI.
+These paths are ignored by Git and were absent on 10 October 2026. The historical
+record described current-user-only Windows ACLs and a credential file containing
+**plaintext generated passwords and the backup passphrase**. Their existence,
+permissions and contents have not been verified in this checkout. Operational
+control keys use current-user Windows DPAPI when provisioned on Windows.
 
 | Artifact | Repository-relative location |
 | --- | --- |
@@ -44,10 +50,12 @@ Start from the project directory:
 .\Aegis.bat start
 ```
 
-In the CLI, `/login operator` securely prompts for its generated password.
+After provisioning your accounts, `/login operator` securely prompts for the
+password you assigned.
 `/doctor` checks the authenticated local application; `/exit` stops the session.
-The default data directory is `data/`. The restored directory is a recovery drill,
-not the active installation. Keep credentials and backups out of source control.
+The default data directory is `data/`. The historical restored directory was
+used for a recovery drill and is absent here. Keep credentials and backups out
+of source control.
 
 ## Remaining deployment actions
 
@@ -59,14 +67,15 @@ not the active installation. Keep credentials and backups out of source control.
    `python aegis.py cli users mfa-enroll <account>`, then sign in using
    `login <account> --mfa`. Authenticator ownership cannot be established by
    generating all seeds on behalf of the reviewers.
-3. Copy the verified encrypted backup to separate offline media and keep its
-   passphrase separately. Both are currently on this workstation, so this
-   completed drill does not protect against loss of the workstation.
+3. Create and verify a new encrypted backup for your current installation, run
+   a restore drill, copy the backup to separate offline media and keep its
+   passphrase separately. The historical backup and passphrase are absent here.
 4. When models and deployment hardware exist, complete
    [DEPLOYMENT_ACCEPTANCE.md](DEPLOYMENT_ACCEPTANCE.md). The onboarding commands
    and qualification suites are in
    [WORKFLOW_READINESS.md](WORKFLOW_READINESS.md).
 
-The local receipt chain verifies correctly. It is not independently witnessed
-in this development installation. Account setup and recovery do not qualify a
-future model, prove server cache erasure, or establish hardware confidentiality.
+The previous record reported a valid local receipt chain without independent
+witnessing. Run `/doctor` after signing in to verify your current installation.
+Account setup and recovery do not qualify a future model, prove server cache
+erasure, or establish hardware confidentiality.

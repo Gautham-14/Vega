@@ -1,0 +1,13 @@
+{
+    "name": "Code Refactor",
+    "version": 1,
+    "task_types": ["action"],
+    "purposes": ["code-refactor"],
+    "tools": ["search", "calculator", "report"],
+    "data_classes": ["PUBLIC", "INTERNAL", "RESTRICTED"],
+    "compartments": ["Engineering"],
+    "output_types": ["approval-note"],
+    "export": "local-recipient-only",
+    "evidence": "authorized-current-source",
+    "approval": "all-physical-actions"
+}

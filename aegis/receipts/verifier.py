@@ -3,9 +3,11 @@ Aegis Sovereign AI Runtime - Receipt Cryptographic Verifier
 Validates receipt integrity, compares declared SHA-256 with recalculations,
 and checks the simulated task call counters recorded in the receipt.
 """
-import json
+
 import hashlib
-from typing import Dict, Any
+import json
+from typing import Any, Dict
+
 
 def verify_receipt(receipt_dict: Dict[str, Any], artifact_text: str) -> Dict[str, Any]:
     """
@@ -17,18 +19,26 @@ def verify_receipt(receipt_dict: Dict[str, Any], artifact_text: str) -> Dict[str
 
     # Recalculate artifact hash
     recalculated_artifact_hash = hashlib.sha256(artifact_text.encode("utf-8")).hexdigest()
-    artifact_valid = (recalculated_artifact_hash == declared_artifact_hash)
+    artifact_valid = recalculated_artifact_hash == declared_artifact_hash
 
     # Recalculate receipt hash (excluding receipt_sha256 key itself)
     clean_dict = {k: v for k, v in receipt_dict.items() if k != "receipt_sha256"}
-    recalculated_receipt_hash = hashlib.sha256(json.dumps(clean_dict, indent=2, sort_keys=True).encode("utf-8")).hexdigest()
+    recalculated_receipt_hash = hashlib.sha256(
+        json.dumps(clean_dict, indent=2, sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
-    receipt_valid = (recalculated_receipt_hash == declared_receipt_hash)
+    receipt_valid = recalculated_receipt_hash == declared_receipt_hash
 
     zero_egress = receipt_dict.get("zero_egress_proof", {})
-    zero_egress_valid = all(type(zero_egress.get(key)) is int and zero_egress[key] == 0
-                            for key in ("external_dns_requests", "external_http_requests",
-                                        "external_api_calls", "network_egress_bytes"))
+    zero_egress_valid = all(
+        type(zero_egress.get(key)) is int and zero_egress[key] == 0
+        for key in (
+            "external_dns_requests",
+            "external_http_requests",
+            "external_api_calls",
+            "network_egress_bytes",
+        )
+    )
 
     all_valid = artifact_valid and receipt_valid and zero_egress_valid
 
@@ -43,5 +53,7 @@ def verify_receipt(receipt_dict: Dict[str, Any], artifact_text: str) -> Dict[str
         "recalculated_receipt_hash": recalculated_receipt_hash,
         "declared_artifact_hash": declared_artifact_hash,
         "recalculated_artifact_hash": recalculated_artifact_hash,
-        "status": "TAMPERED" if not (artifact_valid and receipt_valid) else ("VALID" if zero_egress_valid else "COUNTERS_NOT_ZERO_OR_UNKNOWN")
+        "status": "TAMPERED"
+        if not (artifact_valid and receipt_valid)
+        else ("VALID" if zero_egress_valid else "COUNTERS_NOT_ZERO_OR_UNKNOWN"),
     }
